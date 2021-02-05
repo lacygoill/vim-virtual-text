@@ -63,7 +63,7 @@ const TYPE_PREFIX: string = 'virtualText'
 #
 # I mean, if a window no longer displays  virtual text, do we need to remove its
 # id from  all `win2popup`  dictionaries, as well  as from  the `handled_winids`
-# dictionary?
+# list?
 #
 # We could try to listen some events but that looks brittle.
 # Idea: Whenever you  iterate over virtual  texts in  the db, check  whether the
@@ -177,10 +177,11 @@ augroup END
 # Functions {{{1
 # Interface {{{2
 export def VirtualTextAdd(props: dict<any>) #{{{3
+    var text: string = props.text
+
     var lnum: number = props.lnum
     var col: number = props.col
     var length: number = props.length
-    var text: string = props.text
 
     var highlight_real: string = has_key(props, 'highlights')
         && has_key(props.highlights, 'real')
@@ -209,12 +210,17 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
     #}}}
     var type_id: number
     if !db->has_key(buf)
+        # TODO: We should remove the listener if we remove all virtual texts.
         listener_add(UpdatePadding, buf)
         extend(db, {
             [buf]: {
                 counter: 1,
-                handled_winids: {[curwin]: true},
                 virtualtexts: {},
+                # TODO: In the  future, `VirtualTextAdd()` should add  a virtual
+                # text on *all* the windows displaying the buffer.  Not just the
+                # current one.  When  that's the case, you'll need to  add an id
+                # for *all* these windows; not just for the current window.
+                handled_winids: [curwin],
                 }
             })
     else
@@ -234,12 +240,18 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
     #}}}
     type_id = db[buf]['counter']
 
+    # create text property
     if prop_type_list({bufnr: buf})->index(TYPE_PREFIX .. type_id) == -1
         prop_type_add(TYPE_PREFIX .. type_id, {
             bufnr: buf,
             highlight: highlight_real,
             })
     endif
+    prop_add(lnum, col, {
+        bufnr: buf,
+        length: length,
+        type: TYPE_PREFIX .. type_id,
+        })
 
     # TODO: Old code code which is completely wrong.{{{
     #
@@ -268,14 +280,8 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
     #         db[buf].virtual_text.winid->popup_close()
     #     endfor
 
-    prop_add(lnum, col, {
-        bufnr: buf,
-        length: length,
-        type: TYPE_PREFIX .. type_id,
-        })
-
-    var left_padding: number = col([lnum, '$']) - length - col + 1
-
+    # create the popup
+    var left_padding: number = col([lnum, '$']) - col - length + 1
     var popup_id: number = popup_create(text, {
         fixed: true,
         highlight: highlight_virtual,
@@ -287,6 +293,8 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
         wrap: false,
         zindex: 1,
         })
+
+    # update the db
     extend(db[buf]['virtualtexts'], {[TYPE_PREFIX .. type_id]: {
         highlight_real: highlight_real,
         padding: left_padding,
@@ -315,19 +323,23 @@ def UpdatePadding(buf: number, start: number, ...l: any) #{{{3
         return
     endif
 
+    # get info about the text property implementing the virtual text on the changed line
     var prop_list: list<dict<any>> = start->prop_list()
     var i: number = prop_list->match(TYPE_PREFIX)
     if i == -1
         return
     endif
     var textprop: dict<any> = prop_list[i]
-    var left_padding: number = col([start, '$']) - textprop.length - textprop.col + 1
 
-    var popup_id: number = db[buf]['virtualtexts'][textprop.type]['win2popup'][win_getid()]
-    popup_setoptions(popup_id, {
-        mask: [[1, left_padding, 1, 1]],
-        padding: [0, 0, 0, left_padding],
-        })
+    # update the padding and the mask in *all* windows displaying the buffer
+    var left_padding: number = col([start, '$']) - textprop.col - textprop.length + 1
+    for winid in db[buf]['handled_winids']
+        var popup_id: number = db[buf]['virtualtexts'][textprop.type]['win2popup'][winid]
+        popup_setoptions(popup_id, {
+            mask: [[1, left_padding, 1, 1]],
+            padding: [0, 0, 0, left_padding],
+            })
+    endfor
 enddef
 
 def MirrorPopupsOnAllWindows() #{{{3
@@ -338,7 +350,7 @@ def MirrorPopupsOnAllWindows() #{{{3
     # return if the buffer doesn't have any virtual text
     if !db->has_key(buf)
     # or if the popups are still there
-    || db[buf]['handled_winids']->has_key(curwin)
+    || db[buf]['handled_winids']->index(curwin) >= 0
         return
     endif
 
@@ -379,7 +391,7 @@ def MirrorPopupsOnAllWindows() #{{{3
 
         # update the db so that it knows that there is a new popup to handle
         extend(win2popup, {[curwin]: new_popupid})
-        extend(db[buf]['handled_winids'], {[curwin]: true})
+        extend(db[buf]['handled_winids'], [curwin])
     endfor
 enddef
 
@@ -413,9 +425,9 @@ def RestoreTextPropertiesAfterReload() #{{{3
     endif
     var types: list<string> = db[buf]['virtualtexts']->keys()
     for type in types
-        var info: dict<any> = db[buf]['virtualtexts'][type]
-        var highlight: string = info.highlight_real
-        var pos: dict<number> = info.pos
+        var type_info: dict<any> = db[buf]['virtualtexts'][type]
+        var highlight: string = type_info.highlight_real
+        var pos: dict<number> = type_info.pos
         prop_type_add(type, {
             bufnr: buf,
             highlight: highlight,
@@ -426,7 +438,7 @@ def RestoreTextPropertiesAfterReload() #{{{3
             type: type,
             })
         # don't need the info anymore, let's clear it to keep the db as simple/light as possible
-        info.pos = {}
+        type_info.pos = {}
     endfor
     # Problem: After a buffer is reloaded, the popup windows are still there, but they're no longer visible.{{{
     #
