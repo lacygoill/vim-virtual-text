@@ -280,7 +280,7 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
     augroup END
 enddef
 
-export def VirtualTextDb(): dict<dict<any>> #{{{3
+def g:VirtualTextDb(): dict<dict<any>> #{{{3
 # only useful for debugging purpose
     return db
 enddef
