@@ -472,7 +472,80 @@ def RecreatePopupsInOtherWindows() #{{{3
     # But after a buffer is reloaded,  such a popup loses its `textprop` option,
     # which probably prevents it from being visible.
     #}}}
-    # Solution: Restore the `textprop` option.
+    # Solution: Restore the `textprop` and `textpropwin` options.
+    # FIXME: `:tab sp | e | 1tabnext`{{{
+    #
+    # No virtual texts.
+    #
+    # ---
+    #
+    # `:tab sp | e | 1tabnext | q`
+    #
+    #     E716: Key not present in Dictionary: "padding"~
+    #
+    # ---
+    #
+    # I  *think*  the  issue comes  from  the  fact  that  popups tied  to  text
+    # properties lose their `textprop*` options when their buffer is reloaded in
+    # a different window in a *different* tab page:
+    #
+    #     vim9
+    #     setline(1, 'text')
+    #     sil sav! /tmp/file
+    #     prop_type_add('textprop', {})
+    #     prop_add(1, 1, {type: 'textprop', length: 1})
+    #     var id = popup_create('', {textprop: 'textprop'})
+    #     echom "'textprop*' options BEFORE reload: " .. popup_getoptions(id)
+    #         ->keys()
+    #         ->filter((_, v) => v =~ 'textprop')
+    #         ->string()
+    #     tab sp
+    #     sil e
+    #     echom "'textprop*' options AFTER reload: " .. popup_getoptions(id)
+    #         ->keys()
+    #         ->filter((_, v) => v =~ 'textprop')
+    #         ->string()
+    #
+    #     textprop* options BEFORE reload: ['textprop', 'textpropid', 'textpropwin']~
+    #     textprop* options AFTER reload: []~
+    #
+    # That doesn't happen when  we reload a buffer in a  different window in the
+    # *same* tab page.   Is it a Vim  bug?  I could understand  that the current
+    # window matters  when deciding whether  the options are preserved,  but why
+    # would the current tab page matter?
+    #
+    # ---
+    #
+    # Let's try to restore the `textprop*` options here, and see whether it helps.
+    #
+    # Update: It doesn't always work because `popup_setoptions()` fails to reset
+    # `textpropwin` when the popup is in a different tab page.
+    #
+    #     vim9
+    #     setline(1, 'text')
+    #     sil sav! /tmp/file
+    #     prop_type_add('textprop', {})
+    #     prop_add(1, 1, {type: 'textprop', length: 1})
+    #     var id = popup_create('', {textprop: 'textprop'})
+    #     tab sp
+    #     sil e
+    #     popup_setoptions(id, {textprop: 'textprop', textpropwin: 1000})
+    #     echom popup_getoptions(id).textpropwin
+    #
+    #     # expected: 1000
+    #     # actual: 1002
+    #
+    # Is it a Vim bug?
+    #
+    # Idea: `popup_setoptions()`  is fine  for popups in  the current  tab page.
+    # But for popups in other tab pages, I guess you need to close and re-create
+    # the popups entirely.
+    # All  in all,  it  might be  simpler  to just  close  and re-create  popups
+    # regardless of where they are.
+    #
+    # Try to not write too much new code.
+    # Borrow as much as possible from `MirrorPopupsOnAllWindows()`.
+    #}}}
     for [textprop, win2popup] in db[buf]['virtualtexts']
             ->mapnew((_, v) => v.win2popup)
             ->items()
@@ -503,46 +576,6 @@ def RecreatePopupsInOtherWindows() #{{{3
                 #
                 #     1000~
                 #     1002~
-                #}}}
-                # FIXME: `:tab sp | e | 1tabnext`{{{
-                #
-                # No virtual texts.
-                #
-                # ---
-                #
-                # `:tab sp | e | 1tabnext | q`
-                #
-                #     E716: Key not present in Dictionary: "padding"~
-                #
-                # ---
-                #
-                # On `BufUnload`, the first popup `1001` has already lost its `textprop*` options.
-                # That happens with this:
-                #
-                #     :tab sp | e
-                #
-                # But not with this:
-                #
-                #     :sp | e
-                #
-                # Is this a Vim bug?
-                #
-                # ---
-                #
-                # Let's try to restore the `textprop*` options here, and see whether it helps.
-                #
-                # Update: It  doesn't always  work because  `popup_setoptions()`
-                # fails to reset `textpropwin` when  the popup is in a different
-                # tab page.
-                #
-                # Idea:  `popup_setoptions()` might  be fine  for popups  in the
-                # current  tab page.   But for  popups in  other tab  pages, you
-                # might need to close and re-create the popups entirely.
-                # All in  all, it might be  simpler to just close  and re-create
-                # popups regardless of where they are.
-                #
-                # Try  to not  write  too  much new  code.   Borrow  as much  as
-                # possible from `MirrorPopupsOnAllWindows()`.
                 #}}}
                 textpropwin: textpropwin->str2nr(),
                 })
