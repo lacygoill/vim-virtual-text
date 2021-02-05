@@ -182,11 +182,11 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
     var length: number = props.length
     var text: string = props.text
 
-    var highlight_realtext: string = has_key(props, 'highlights')
+    var highlight_real: string = has_key(props, 'highlights')
         && has_key(props.highlights, 'real')
         ? props.highlights.real
         : 'Normal'
-    var highlight_virtualtext: string = has_key(props, 'highlights')
+    var highlight_virtual: string = has_key(props, 'highlights')
         && has_key(props.highlights, 'virtual')
         ? props.highlights.virtual
         : 'Normal'
@@ -202,9 +202,9 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
     #
     # I think it could cause a property type to be wrongly shared between 2 texts:
     #
-    #     VirtualTextAdd({lnum: 123, highlight_realtext: 'Foo', ...})
+    #     VirtualTextAdd({lnum: 123, highlight_real: 'Foo', ...})
     #     # delete line 122
-    #     VirtualTextAdd({lnum: 123, highlight_realtext: 'Bar', ...})
+    #     VirtualTextAdd({lnum: 123, highlight_real: 'Bar', ...})
     #     # 'Foo' will *probably* be used for the 2 virtual texts
     #}}}
     var type_id: number
@@ -237,7 +237,7 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
     if prop_type_list({bufnr: buf})->index(TYPE_PREFIX .. type_id) == -1
         prop_type_add(TYPE_PREFIX .. type_id, {
             bufnr: buf,
-            highlight: highlight_realtext,
+            highlight: highlight_real,
             })
     endif
 
@@ -278,7 +278,7 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
 
     var popup_id: number = popup_create(text, {
         fixed: true,
-        highlight: highlight_virtualtext,
+        highlight: highlight_virtual,
         line: -1,
         mask: [[1, left_padding, 1, 1]],
         padding: [0, 0, 0, left_padding],
@@ -288,7 +288,7 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
         zindex: 1,
         })
     extend(db[buf]['virtualtexts'], {[TYPE_PREFIX .. type_id]: {
-        highlight_realtext: highlight_realtext,
+        highlight_real: highlight_real,
         padding: left_padding,
         pos: {},
         text: text,
@@ -414,7 +414,7 @@ def RestoreTextPropertiesAfterReload() #{{{3
     var types: list<string> = db[buf]['virtualtexts']->keys()
     for type in types
         var info: dict<any> = db[buf]['virtualtexts'][type]
-        var highlight: string = info.highlight_realtext
+        var highlight: string = info.highlight_real
         var pos: dict<number> = info.pos
         prop_type_add(type, {
             bufnr: buf,
