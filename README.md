@@ -1,4 +1,4 @@
-Work in progress.  Bugs to fix; features to implement.
+Work in progress.  Bugs to fix; features to implement; doc to write.
 
 To test:
 
