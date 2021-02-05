@@ -17,7 +17,7 @@ var lines: list<string> =<< trim END
     The lone and level sands stretch far away.”
 END
 writefile(lines, '/tmp/file')
-sil e /tmp/file
+sil nos e /tmp/file
 
 import VirtualTextAdd from 'virtualText.vim'
 
