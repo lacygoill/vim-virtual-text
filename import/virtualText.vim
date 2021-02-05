@@ -62,13 +62,15 @@ const TYPE_PREFIX: string = 'virtualText'
 # virtual texts suddenly displays another buffer?
 #
 # I mean, if a window no longer displays  virtual text, do we need to remove its
-# id from all `win2popup` dictionaries?
+# id from  all `win2popup`  dictionaries, as well  as from  the `handled_winids`
+# dictionary?
 #
 # We could try to listen some events but that looks brittle.
 # Idea: Whenever you  iterate over virtual  texts in  the db, check  whether the
-# window ids  still display  virtual texts.   How?  I guess  that the  popups no
-# longer exist,  or – if they  do – some of  their options have changed  in some
-# way.  Basically, inspect `popup_getoptions()`.
+# window  ids  still  display  virtual  texts.   How?   Inspect  the  output  of
+# `popup_getoptions()` for a popup displaying virtual text in that window.
+# If it  no longer  has any `textprop`  key, then it  probably means  there's no
+# virtual text anymore.
 
 # TODO: `VirtualTextAdd()` cannot simply add virtual text in the current window.
 # It must do the same in *all* windows where the current buffer is displayed.
@@ -107,6 +109,10 @@ const TYPE_PREFIX: string = 'virtualText'
 # Update: Actually, can  repro just by  deleting the third line,  then appending
 # text on the new 3rd line.
 
+# TODO: We should be able to *only* pass a line number and some text to `VirtualTextAdd()`.
+# In such a case, the function should not tie the virtual text to any real text.
+# It should stay visible on the line as long as the latter is not removed.
+
 # TODO: We  need to  use this  feature as  frequently as  possible, to  test and
 # improve its reliability.  Any idea how we would use it?
 # Suggestion: Supercharge the `m` command so that when  we set a mark on a line,
@@ -118,11 +124,15 @@ const TYPE_PREFIX: string = 'virtualText'
 
 # What does this db do?{{{
 #
-# It maps a buffer number to a counter and arbitrary virtual texts.
+# It maps a buffer number to arbitrary  virtual texts, as well as a counter, and
+# a list of window IDs.
 #
 # The counter is necessary to generate unique property type names.
 # It's incremented every time a virtual text is added into to the buffer.
 # It's *never* decremented; even if a virtual text is later removed.
+#
+# The list  of window IDs  match the windows where  the buffer is  displayed and
+# where the popups have been created.
 #
 # A virtual text is stored as a  dictionary mapping a text property type name to
 # various information which we need when we want to:
@@ -171,15 +181,15 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
     var col: number = props.col
     var length: number = props.length
     var text: string = props.text
-    var highlight_text: string = has_key(props, 'highlight_text')
-        ? props.highlight_text
+
+    var highlight_realtext: string = has_key(props, 'highlights')
+        && has_key(props.highlights, 'real')
+        ? props.highlights.real
         : 'Normal'
-    var highlight_virtualtext: string = has_key(props, 'highlight_virtualtext')
-        ? props.highlight_virtualtext
+    var highlight_virtualtext: string = has_key(props, 'highlights')
+        && has_key(props.highlights, 'virtual')
+        ? props.highlights.virtual
         : 'Normal'
-    if has_key(props, 'highlight_virtualtext')
-        highlight_virtualtext = props.highlight_virtualtext
-    endif
 
     var buf: number = bufnr('%')
     var curwin: number = win_getid()
@@ -192,9 +202,9 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
     #
     # I think it could cause a property type to be wrongly shared between 2 texts:
     #
-    #     VirtualTextAdd({lnum: 123, highlight_text: 'Foo', ...})
+    #     VirtualTextAdd({lnum: 123, highlight_realtext: 'Foo', ...})
     #     # delete line 122
-    #     VirtualTextAdd({lnum: 123, highlight_text: 'Bar', ...})
+    #     VirtualTextAdd({lnum: 123, highlight_realtext: 'Bar', ...})
     #     # 'Foo' will *probably* be used for the 2 virtual texts
     #}}}
     var type_id: number
@@ -203,7 +213,7 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
         extend(db, {
             [buf]: {
                 counter: 1,
-                winids: {[curwin]: true},
+                handled_winids: {[curwin]: true},
                 virtualtexts: {},
                 }
             })
@@ -227,7 +237,7 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
     if prop_type_list({bufnr: buf})->index(TYPE_PREFIX .. type_id) == -1
         prop_type_add(TYPE_PREFIX .. type_id, {
             bufnr: buf,
-            highlight: highlight_text,
+            highlight: highlight_realtext,
             })
     endif
 
@@ -278,7 +288,7 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
         zindex: 1,
         })
     extend(db[buf]['virtualtexts'], {[TYPE_PREFIX .. type_id]: {
-        highlight: highlight_text,
+        highlight_realtext: highlight_realtext,
         padding: left_padding,
         pos: {},
         text: text,
@@ -304,6 +314,7 @@ def UpdatePadding(buf: number, start: number, ...l: any) #{{{3
     if start > line('$') || !db->has_key(buf)
         return
     endif
+
     var prop_list: list<dict<any>> = start->prop_list()
     var i: number = prop_list->match(TYPE_PREFIX)
     if i == -1
@@ -327,7 +338,7 @@ def MirrorPopupsOnAllWindows() #{{{3
     # return if the buffer doesn't have any virtual text
     if !db->has_key(buf)
     # or if the popups are still there
-    || db[buf]['winids']->has_key(curwin)
+    || db[buf]['handled_winids']->has_key(curwin)
         return
     endif
 
@@ -368,7 +379,7 @@ def MirrorPopupsOnAllWindows() #{{{3
 
         # update the db so that it knows that there is a new popup to handle
         extend(win2popup, {[curwin]: new_popupid})
-        extend(db[buf]['winids'], {[curwin]: true})
+        extend(db[buf]['handled_winids'], {[curwin]: true})
     endfor
 enddef
 
@@ -403,7 +414,7 @@ def RestoreTextPropertiesAfterReload() #{{{3
     var types: list<string> = db[buf]['virtualtexts']->keys()
     for type in types
         var info: dict<any> = db[buf]['virtualtexts'][type]
-        var highlight: string = info.highlight
+        var highlight: string = info.highlight_realtext
         var pos: dict<number> = info.pos
         prop_type_add(type, {
             bufnr: buf,
