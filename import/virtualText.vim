@@ -309,6 +309,7 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
         au! * <buffer>
         au BufUnload <buffer> SaveTextPropertiesBeforeReload()
         au BufReadPost <buffer> RestoreTextPropertiesAfterReload()
+            | RecreatePopupsInOtherWindows()
     augroup END
 enddef
 
@@ -440,6 +441,14 @@ def RestoreTextPropertiesAfterReload() #{{{3
         # don't need the info anymore, let's clear it to keep the db as simple/light as possible
         type_info.pos = {}
     endfor
+enddef
+
+def RecreatePopupsInOtherWindows() #{{{3
+    var buf: string = expand('<abuf>')
+    if !db->has_key(buf)
+        return
+    endif
+
     # Problem: After a buffer is reloaded, the popup windows are still there, but they're no longer visible.{{{
     #
     # When tied to a text property, a popup has 3 text-property-related options:
