@@ -118,12 +118,26 @@ const TYPE_PREFIX: string = 'virtualText'
 
 # What does this db do?{{{
 #
-# It maps  buffer numbers to names  of property types used  to implement virtual
-# texts; the latter are mapped to popup window ids via nested dictionaries.
-#}}}
-#   In it, why shouldn't I include the original line number on which a virtual text has been applied?{{{
+# It maps a buffer number to a counter and arbitrary virtual texts.
 #
-# It's meaningless.  It can change at any time, because a line can be moved.
+# The counter is necessary to generate unique property type names.
+# It's incremented every time a virtual text is added into to the buffer.
+# It's *never* decremented; even if a virtual text is later removed.
+#
+# A virtual text is stored as a  dictionary mapping a text property type name to
+# various information which we need when we want to:
+#
+#    - reload the buffer
+#
+#    - "mirror" the virtual text in all windows displaying the buffer
+#
+#    - update the padding between the left border of the popup and its text,
+#      because some text has been inserted/deleted
+#
+# Regarding the first bullet point, remember that Vim automatically removes text
+# properties when  a buffer is  reloaded.  Which in  turn causes popups  tied to
+# text properties to lose their `textprop*` options.
+# This needs to be fixed for virtual texts to persist across reloads.
 #}}}
 var db: dict<dict<any>> = {}
 
@@ -173,7 +187,7 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
     # Do *not* use `lnum` as a unique ID.{{{
     #
     # It's not a good proxy for a property type.
-    # Remember that a line on which you  apply a text property can move, e.g. if
+    # Remember that a line  on which we apply a text property  can move, e.g. if
     # we remove the line above, its address will decrease by 1.
     #
     # I think it could cause a property type to be wrongly shared between 2 texts:
@@ -190,7 +204,7 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
             [buf]: {
                 counter: 1,
                 winids: {[curwin]: true},
-                textprops: {},
+                virtualtexts: {},
                 }
             })
     else
@@ -198,15 +212,15 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
     endif
     # A dummy counter is probably the only reliable way to avoid conflicts.{{{
     #
-    # Don't try to be smart by inspecting the length of `textprops`:
+    # Don't try to be smart by inspecting the length of `virtualtexts`:
     #
     #     ✘
     #     type_id = db[buf]->keys()->len()
     #
     # I suspect  that it could lead  to some conflicts when  text properties are
     # removed, making  the id  decrease.  The id  should always  increase.  Just
-    # like  when Vim  gives a  number to  a buffer,  it's always  an incremented
-    # number.  Even if a buffer has been removed, Vim doesn't reuse its number.
+    # like when Vim  gives a number to a buffer,  it's always incremented.  Even
+    # if a buffer has been removed, Vim doesn't reuse its number.
     #}}}
     type_id = db[buf]['counter']
 
@@ -220,7 +234,7 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
     # TODO: Old code code which is completely wrong.{{{
     #
     # It  never raised  any  error  because it  was  never  executed at  runtime
-    # (`prop_list()` empty).
+    # (`prop_list()` was empty).
     #
     #         when you wrote that, you probably thought it was a literal string (it's not; it's a dictionary)
     #         v----------v
@@ -263,7 +277,7 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
         wrap: false,
         zindex: 1,
         })
-    extend(db[buf]['textprops'], {[TYPE_PREFIX .. type_id]: {
+    extend(db[buf]['virtualtexts'], {[TYPE_PREFIX .. type_id]: {
         highlight: highlight_text,
         padding: left_padding,
         pos: {},
@@ -271,8 +285,8 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
         win2popup: {[curwin]: popup_id},
         }})
 
-    # Vim automatically clears all text properties from a buffer when it's reloaded;
-    # we need to save and restore them
+    # Vim  automatically clears  all text  properties  from a  buffer when  it's
+    # reloaded; we need to save and restore them.
     augroup VirtualTextPersistAfterReload
         au! * <buffer>
         au BufUnload <buffer> SaveTextPropertiesBeforeReload()
@@ -298,7 +312,7 @@ def UpdatePadding(buf: number, start: number, ...l: any) #{{{3
     var textprop: dict<any> = prop_list[i]
     var left_padding: number = col([start, '$']) - textprop.length - textprop.col + 1
 
-    var popup_id: number = db[buf]['textprops'][textprop.type]['win2popup'][win_getid()]
+    var popup_id: number = db[buf]['virtualtexts'][textprop.type]['win2popup'][win_getid()]
     popup_setoptions(popup_id, {
         mask: [[1, left_padding, 1, 1]],
         padding: [0, 0, 0, left_padding],
@@ -309,6 +323,7 @@ def MirrorPopupsOnAllWindows() #{{{3
     var buf: string = expand('<abuf>')
     var curwin: number = win_getid()
     var curtab: number = tabpagenr()
+
     # return if the buffer doesn't have any virtual text
     if !db->has_key(buf)
     # or if the popups are still there
@@ -318,7 +333,7 @@ def MirrorPopupsOnAllWindows() #{{{3
 
     # iterate over the virtual texts
     # (i.e. their text, the name of their text property, and their popup ids)
-    for [text, textprop, win2popup] in db[buf]['textprops']
+    for [text, textprop, win2popup] in db[buf]['virtualtexts']
         ->mapnew((k, v) => [v.text, k, v.win2popup])
         ->values()
 
@@ -365,15 +380,15 @@ def SaveTextPropertiesBeforeReload() #{{{3
         return
     endif
 
-    var types: list<string> = db[buf]['textprops']->keys()
+    var types: list<string> = db[buf]['virtualtexts']->keys()
     for type in types
         try
             var newpos: dict<any> = {type: type}->prop_find('f')
             if newpos == {}
                 newpos = {type: type}->prop_find('b')
             endif
-            db[buf]['textprops'][type]['pos'] = newpos
-            remove(db[buf]['textprops'][type]['pos'], 'type')
+            db[buf]['virtualtexts'][type]['pos'] = newpos
+            remove(db[buf]['virtualtexts'][type]['pos'], 'type')
         # Vim:E971: Property type virtualText123 does not exist
         catch /^Vim\%((\a\+)\)\=:E971:/
         endtry
@@ -385,9 +400,9 @@ def RestoreTextPropertiesAfterReload() #{{{3
     if !db->has_key(buf)
         return
     endif
-    var types: list<string> = db[buf]['textprops']->keys()
+    var types: list<string> = db[buf]['virtualtexts']->keys()
     for type in types
-        var info: dict<any> = db[buf]['textprops'][type]
+        var info: dict<any> = db[buf]['virtualtexts'][type]
         var highlight: string = info.highlight
         var pos: dict<number> = info.pos
         prop_type_add(type, {
@@ -426,7 +441,7 @@ def RestoreTextPropertiesAfterReload() #{{{3
     # which probably prevents it from being visible.
     #}}}
     # Solution: Restore the `textprop` option.
-    for [textprop, win2popup] in db[buf]['textprops']
+    for [textprop, win2popup] in db[buf]['virtualtexts']
             ->mapnew((_, v) => v.win2popup)
             ->items()
         # We need to do that for *all* windows displaying the buffer.{{{
