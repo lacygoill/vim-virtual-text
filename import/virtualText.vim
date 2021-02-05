@@ -486,14 +486,23 @@ def RecreatePopupsInOtherWindows() #{{{3
         for [textpropwin, id] in win2popup->items()
             popup_setoptions(id, {
                 textprop: textprop,
-                # TODO: We need to also reset `textpropwin`.{{{
+                # We need to also reset `textpropwin`.{{{
                 #
-                # It seems that when you reset `textprop`, `textpropwin` is also
-                # reset with  the id of  the current window.   Is it a  Vim bug?
-                # Find a MWE.
-                # And  find out  what  happens to  `textpropwin`  when we  reset
-                # `textprop` while  the current  window does  not have  any text
-                # property.
+                # Resetting `textprop` causes `textpropwin` to be reset with the
+                # id of the current window.
+                #
+                #     vim9
+                #     setline(1, 'text')
+                #     prop_type_add('textprop', {})
+                #     prop_add(1, 1, {type: 'textprop', length: 1})
+                #     var id = popup_create('', {textprop: 'textprop'})
+                #     echo popup_getoptions(id).textpropwin
+                #     new
+                #     popup_setoptions(id, {textprop: 'textprop'})
+                #     echo popup_getoptions(id).textpropwin
+                #
+                #     1000~
+                #     1002~
                 #}}}
                 # FIXME: `:tab sp | e | 1tabnext`{{{
                 #
