@@ -14,8 +14,8 @@ const TYPE_PREFIX: string = 'virtualText'
 #    > textpropwin     What window to search for the text property.  **When**
 #    >                 **omitted** or invalid **the current window is used**.
 #
-# Also, I think that  popups are destroyed when they're tied  to a text property
-# in a certain window, and that window is closed.
+# Also,  I think  that popups  are  destroyed when  they're attached  to a  text
+# property in a certain window, and that window is closed.
 #
 # ---
 #
@@ -62,8 +62,7 @@ const TYPE_PREFIX: string = 'virtualText'
 # virtual texts suddenly displays another buffer?
 #
 # I mean, if a window no longer displays  virtual text, do we need to remove its
-# id from  all `win2popup`  dictionaries, as well  as from  the `handled_winids`
-# list?
+# id from all `win2popup` dictionaries?
 #
 # We could try to to listen some events but that looks brittle.
 # Idea: Whenever you  iterate over virtual  texts in  the db, check  whether the
@@ -75,12 +74,17 @@ const TYPE_PREFIX: string = 'virtualText'
 # TODO: We should be able  to add virtual text in an  arbitrary buffer; not just
 # the current one.
 
+# TODO: Truncate the virtual  text so that it doesn't overflow  beyond the right
+# border of a window.  Use `popup_settext()` to reset the text.
+
 # TODO: We should be able to use different highlight groups for different chunks
 # of the virtual text.  This would be useful, for example, to highlight a prefix
 # in a different color.
 
-# TODO: Implement `VirtualTextClear()` to remove arbitrary virtual texts, inside
-# arbitrary range of lines, in an arbitrary buffer.
+# TODO: Implement `VirtualTextClear()`{{{
+#
+# To remove  arbitrary virtual  texts, inside  arbitrary range  of lines,  in an
+# arbitrary buffer.
 #
 # Signature:
 #
@@ -95,8 +99,13 @@ const TYPE_PREFIX: string = 'virtualText'
 # About the `ns_id` argument: it will require some refactoring.
 # We'll need `VirtualTextAdd()` to map a virtual text to an arbitrary namespace.
 # The db will also need to be refactored to include the namespace info.
+#
+# ---
+#
+# We should remove the listener if we remove all virtual texts from a buffer.
+#}}}
 
-# FIXME: Doesn't work well when joining lines with virtual texts.
+# FIXME: Doesn't work well when joining lines with virtual texts.{{{
 #
 # Example: Delete the first  3 lines (the ones which don't  have virtual texts),
 # then join the  new first 2 lines  (the one which do have  virtual texts), then
@@ -105,6 +114,24 @@ const TYPE_PREFIX: string = 'virtualText'
 #
 # Update: Actually, can  repro just by  deleting the third line,  then appending
 # text on the new 3rd line.
+#}}}
+# FIXME: Doesn't work well when cutting lines.{{{
+#
+# Example: Press `cj` while on the "shattered" line:
+#
+#     Half sunk a shattered visage lies, whose frown,
+#     And wrinkled lip, and sneer of cold command,
+#
+# The second virtual text is correctly removed, but not the first one.
+# This trailing text remains:
+#
+#     en into many pieces
+#
+# It's a Vim bug, and I don't think there is much we can do to fix it on our side.
+# Although, you  could install a  custom mapping  which would clear  a remaining
+# virtual text on-demand.   But note that in  that case, if you  undo, you won't
+# recover it.
+#}}}
 
 # TODO: We should be able to *only* pass a line number and some text to `VirtualTextAdd()`.
 # In such a case, the function should not tie the virtual text to any real text.
@@ -143,10 +170,11 @@ const TYPE_PREFIX: string = 'virtualText'
 #
 # Regarding the first bullet point, remember that Vim automatically removes text
 # properties when a buffer is reloaded,  if they're local to this buffer.  Which
-# in  turn causes  popups  tied to  text properties  to  lose their  `textprop*`
+# in turn  causes popups attached to  text properties to lose  their `textprop*`
 # options.  This needs to be fixed for virtual texts to persist across reloads.
 #}}}
 var db: dict<dict<any>> = {}
+var counters: dict<number> = {}
 
 # Autocmds {{{1
 
@@ -156,6 +184,7 @@ augroup VirtualTextReplicatePopups | au!
     # Because the current buffer might be still wrong on `WinEnter`.
     # As a  result, the guard  at the top of  `MirrorPopupsOnAllWindows()` might
     # fail to correctly bail out.
+    #
     # You can observe this by executing from a window with virtual texts:
     #
     #     :echo popup_list()
@@ -163,11 +192,36 @@ augroup VirtualTextReplicatePopups | au!
     #     :tabnew
     #     :echo popup_list()
     #     # 2 * N
-    #
-    # In turn,  this might  cause weird  issues; like a  duplicate popup  in the
-    # tabline after creating a tab page, then focusing back the previous tab.
     #}}}
-    au WinEnter,BufWinEnter * au SafeState * ++once MirrorPopupsOnAllWindows()
+    # TODO: `SafeState` looks brittle.  Is there a better way.
+    # FIXME: `E716` is sometimes raised.{{{
+    #
+    #     :tab sp | 1tabnext | q
+    #     # E716: Key not present in Dictionary: "padding"
+    #
+    #     :tab sp | 1tabnext
+    #     :q
+    #     # E716: Key not present in Dictionary: "padding"
+    #
+    #     :tab sp
+    #     :1tabnext | q
+    #     # no error
+    #
+    # ---
+    #
+    # It seems that because of  the delay, `win2popup` is sometimes unexpectedly
+    # empty, when  `MirrorPopupsOnAllWindows()` is invoked.  In  turn, it causes
+    # this line to raise `E716`:
+    #
+    #     var left_padding: number = opts.padding[3]
+    #
+    # ---
+    #
+    # A timer doesn't fix the issue.  Although, if you do use a timer, the issue
+    # is triggered by different commands (e.g. `:sp | q`).
+    #}}}
+    au WinEnter,BufWinEnter * au SafeState * ++once UpdateWin2Popup()
+        | MirrorPopupsOnAllWindows()
     au BufWipeOut * RemoveWipedBuffersFromDb()
 augroup END
 
@@ -197,7 +251,7 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
     # And remove the old text property;  otherwise some real text might be still
     # wrongly highlighted.
     #}}}
-    CleanUp(buf, lnum)
+    RemoveStaleVirtualText(buf, lnum)
 
     # Do *not* use `lnum` as a unique ID.{{{
     #
@@ -214,17 +268,11 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
     #}}}
     var type_id: number
     if !db->has_key(buf)
-        # TODO: We should remove the listener if we remove all virtual texts.
         listener_add(UpdatePadding, buf)
-        extend(db, {
-            [buf]: {
-                counter: 1,
-                virtualtexts: {},
-                handled_winids: [],
-                }
-            })
+        extend(db, {[buf]: {}})
+        extend(counters, {[buf]: 1})
     else
-        db[buf]['counter'] = db[buf]['counter'] + 1
+        counters[buf] = counters[buf] + 1
     endif
     # A dummy counter is probably the only reliable way to avoid conflicts.{{{
     #
@@ -238,7 +286,7 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
     # like when Vim  gives a number to a buffer,  it's always incremented.  Even
     # if a buffer has been removed, Vim doesn't reuse its number.
     #}}}
-    type_id = db[buf]['counter']
+    type_id = counters[buf]
 
     # create text property
     if prop_type_list({bufnr: buf})->index(TYPE_PREFIX .. type_id) == -1
@@ -257,7 +305,6 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
     # iterate over *all* the windows where the current buffer is displayed
     for winid in win_findbuf(buf)
         # create the popup
-        # FIXME: doesn't work in another tab page
         var popup_id: number = popup_create(text, {
             fixed: true,
             highlight: highlight_virtual,
@@ -271,12 +318,7 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
             tabpage: win_id2tabwin(winid)[0],
             })
 
-        # update the db
-        var handled_winids: list<number> = db[buf]['handled_winids']
-        if index(handled_winids, winid) == -1
-            extend(handled_winids, [winid])
-        endif
-        extend(db[buf]['virtualtexts'], {[TYPE_PREFIX .. type_id]: {
+        extend(db[buf], {[TYPE_PREFIX .. type_id]: {
             highlight_real: highlight_real,
             padding: left_padding,
             pos: {},
@@ -291,7 +333,7 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
         au! * <buffer>
         au BufUnload <buffer> SaveTextPropertiesBeforeReload()
         au BufReadPost <buffer> RestoreTextPropertiesAfterReload()
-            | RecreatePopupsInOtherWindows()
+            | FixPopups()
     augroup END
 enddef
 
@@ -301,7 +343,7 @@ def g:VirtualTextDb(): dict<dict<any>> #{{{3
 enddef
 #}}}2
 # Core {{{2
-def CleanUp(buf: number, lnum: number) #{{{3
+def RemoveStaleVirtualText(buf: number, lnum: number) #{{{3
     var proplist: list<dict<any>> = prop_list(lnum)
     var idx: number
     while idx >= 0
@@ -312,7 +354,8 @@ def CleanUp(buf: number, lnum: number) #{{{3
 
         # close stale popup(s)
         var stale_virtualtext: string = proplist[idx]['type']
-        var stale_popups: list<number> = db[buf]['virtualtexts'][stale_virtualtext]['win2popup']->values()
+        var stale_popups: list<number> =
+            db[buf][stale_virtualtext]['win2popup']->values()
         for id in stale_popups
             popup_close(id)
         endfor
@@ -325,11 +368,23 @@ def CleanUp(buf: number, lnum: number) #{{{3
             all: true
             }, lnum)
         prop_type_delete(stale_virtualtext, {bufnr: buf})
-        db[buf]['virtualtexts']->remove(stale_virtualtext)
+        db[buf]->remove(stale_virtualtext)
     endwhile
 enddef
 
 def UpdatePadding(buf: number, start: number, ...l: any) #{{{3
+    # FIXME: The padding is not updated after splitting a window, then changing the focus:{{{
+    #
+    #     :sp
+    #     :wincmd w
+    #
+    # ---
+    #
+    # Also:
+    #
+    #     :sp | wincmd w | call feedkeys('ii', 'nxt')
+    #     E716: Key not present in Dictionary: "1005"~
+    #}}}
     if start > line('$') || !db->has_key(buf)
         return
     endif
@@ -343,13 +398,51 @@ def UpdatePadding(buf: number, start: number, ...l: any) #{{{3
     var textprop: dict<any> = prop_list[i]
 
     # update the padding and the mask in *all* windows displaying the buffer
-    var left_padding: number = col([start, '$']) - textprop.col - textprop.length + 1
-    for winid in db[buf]['handled_winids']
-        var popup_id: number = db[buf]['virtualtexts'][textprop.type]['win2popup'][winid]
+    var left_padding: number =
+        col([start, '$']) - textprop.col - textprop.length + 1
+    # TODO: Try to cache `win_findbuf()` to optimize the performance.
+    # Clear the cache on `WinLeave` and `BufWinLeave`.
+    for winid in win_findbuf(buf)
+        var popup_id: number = db[buf][textprop.type]['win2popup'][winid]
         popup_setoptions(popup_id, {
             mask: [[1, left_padding, 1, 1]],
             padding: [0, 0, 0, left_padding],
             })
+    endfor
+enddef
+
+def UpdateWin2Popup() #{{{3
+    var buf: number = expand('<abuf>')->str2nr()
+
+    # return if the buffer doesn't have any virtual text
+    if !db->has_key(buf)
+        return
+    endif
+
+    # TODO: If a window no longer displays the current buffer, you might want to remove its key.{{{
+    #
+    # Update: This code "somewhat" works.
+    # But there are 2 issues.
+    # Split the window, then close it:
+    #
+    #     echo popup_list()->len()
+    #     8~
+    #
+    # Why 8?  It should be 4, right?
+    # Also, the popup id seems wrong in the db:
+    #
+    #     :echo VirtualTextDb().1.virtualText1.win2popup
+    #     {'1000': 1001}~
+    #     :sp
+    #     :q
+    #     :echo VirtualTextDb().1.virtualText1.win2popup
+    #     {'1000': 1015}~
+    #}}}
+    var win_findbuf: list<string> = win_findbuf(buf)
+        ->mapnew((_, v) => v->string())
+    for textprop in db[buf]->keys()
+        db[buf][textprop]['win2popup']
+            ->filter((k, v) => index(win_findbuf, k) >= 0)
     endfor
 enddef
 
@@ -360,14 +453,16 @@ def MirrorPopupsOnAllWindows() #{{{3
 
     # return if the buffer doesn't have any virtual text
     if !db->has_key(buf)
-    # or if the popups are still there
-    || db[buf]['handled_winids']->index(curwin) >= 0
+    # TODO: bail out if the popups have already been created on the current window
+    #
+    #     or if the popups are still there
+    #     || db[buf]['win_findbuf']->index(curwin) >= 0
         return
     endif
 
     # iterate over the virtual texts
     # (i.e. their text, the name of their text property, and their popup ids)
-    for [text, textprop, win2popup] in db[buf]['virtualtexts']
+    for [text, textprop, win2popup] in db[buf]
         ->mapnew((k, v) => [v.text, k, v.win2popup])
         ->values()
 
@@ -377,32 +472,20 @@ def MirrorPopupsOnAllWindows() #{{{3
             # let's pick the first one arbitrarily
             ->get(0)
         var opts: dict<any> = popup_getoptions(existing_popupid)
-        # `popup_getoptions()` doesn't give us `mask`:
-        # https://github.com/vim/vim/issues/7774
+        # `popup_getoptions()` doesn't give us `mask`: https://github.com/vim/vim/issues/7774
         # let's derive it from `padding`
         var left_padding: number = opts.padding[3]
         extend(opts, {
             mask: [[1, left_padding, 1, 1]],
             tabpage: curtab,
-            # Why do we need to reset `textprop`?{{{
-            #
-            # If we don't,  the popups are invisible or  wrongly positioned when
-            # executing sth like `:tab sp` in a window with virtual texts.
-            #
-            # The issue  is caused by  `popup_getoptions()` which fails  to give
-            # the  `textprop*`  options  for  a  popup  window  displayed  in  a
-            # non-focused tab page: https://github.com/vim/vim/issues/7786
-            #}}}
-            textprop: textprop,
             textpropwin: curwin,
             })
 
         # replicate popup in current window
         var new_popupid: number = popup_create(text, opts)
 
-        # update the db so that it knows that there is a new popup to handle
+        # update the db
         extend(win2popup, {[curwin]: new_popupid})
-        extend(db[buf]['handled_winids'], [curwin])
     endfor
 enddef
 
@@ -414,15 +497,15 @@ def SaveTextPropertiesBeforeReload() #{{{3
         return
     endif
 
-    var types: list<string> = db[buf]['virtualtexts']->keys()
+    var types: list<string> = db[buf]->keys()
     for type in types
         try
             var newpos: dict<any> = {type: type}->prop_find('f')
             if newpos == {}
                 newpos = {type: type}->prop_find('b')
             endif
-            db[buf]['virtualtexts'][type]['pos'] = newpos
-            remove(db[buf]['virtualtexts'][type]['pos'], 'type')
+            db[buf][type]['pos'] = newpos
+            remove(db[buf][type]['pos'], 'type')
         # Vim:E971: Property type virtualText123 does not exist
         catch /^Vim\%((\a\+)\)\=:E971:/
         endtry
@@ -434,9 +517,9 @@ def RestoreTextPropertiesAfterReload() #{{{3
     if !db->has_key(buf)
         return
     endif
-    var types: list<string> = db[buf]['virtualtexts']->keys()
+    var types: list<string> = db[buf]->keys()
     for type in types
-        var type_info: dict<any> = db[buf]['virtualtexts'][type]
+        var type_info: dict<any> = db[buf][type]
         var highlight: string = type_info.highlight_real
         var pos: dict<number> = type_info.pos
         prop_type_add(type, {
@@ -453,7 +536,7 @@ def RestoreTextPropertiesAfterReload() #{{{3
     endfor
 enddef
 
-def RecreatePopupsInOtherWindows() #{{{3
+def FixPopups() #{{{3
     var buf: string = expand('<abuf>')
     if !db->has_key(buf)
         return
@@ -461,7 +544,7 @@ def RecreatePopupsInOtherWindows() #{{{3
 
     # Problem: After a buffer is reloaded, the popup windows are still there, but they're no longer visible.{{{
     #
-    # When tied to a text property, a popup has 3 text-property-related options:
+    # When attached to a text property, a popup has 3 text-property-related options:
     #
     #    > textprop	When present the popup is positioned next to a text
     #    >                property with this name and will move when the text
@@ -497,80 +580,7 @@ def RecreatePopupsInOtherWindows() #{{{3
     # Note that this is only the case if the text property is local to the buffer.
     #}}}
     # Solution: Restore the `textprop` and `textpropwin` options.
-    # FIXME: `:tab sp | e | 1tabnext`{{{
-    #
-    # No virtual texts.
-    #
-    # ---
-    #
-    # `:tab sp | e | 1tabnext | q`
-    #
-    #     E716: Key not present in Dictionary: "padding"~
-    #
-    # ---
-    #
-    # I  *think*  the  issue comes  from  the  fact  that  popups tied  to  text
-    # properties lose their `textprop*` options when their buffer is reloaded in
-    # a different window in a *different* tab page:
-    #
-    #     vim9
-    #     setline(1, 'text')
-    #     sil sav! /tmp/file
-    #     prop_type_add('textprop', {})
-    #     prop_add(1, 1, {type: 'textprop', length: 1})
-    #     var id = popup_create('', {textprop: 'textprop'})
-    #     echom "'textprop*' options BEFORE reload: " .. popup_getoptions(id)
-    #         ->keys()
-    #         ->filter((_, v) => v =~ 'textprop')
-    #         ->string()
-    #     tab sp
-    #     sil e
-    #     echom "'textprop*' options AFTER reload: " .. popup_getoptions(id)
-    #         ->keys()
-    #         ->filter((_, v) => v =~ 'textprop')
-    #         ->string()
-    #
-    #     textprop* options BEFORE reload: ['textprop', 'textpropid', 'textpropwin']~
-    #     textprop* options AFTER reload: []~
-    #
-    # That doesn't happen when  we reload a buffer in a  different window in the
-    # *same* tab page.   Is it a Vim  bug?  I could understand  that the current
-    # window matters  when deciding whether  the options are preserved,  but why
-    # would the current tab page matter?
-    #
-    # ---
-    #
-    # Let's try to restore the `textprop*` options here, and see whether it helps.
-    #
-    # Update: It doesn't always work because `popup_setoptions()` fails to reset
-    # `textpropwin` when the popup is in a different tab page.
-    #
-    #     vim9
-    #     setline(1, 'text')
-    #     sil sav! /tmp/file
-    #     prop_type_add('textprop', {})
-    #     prop_add(1, 1, {type: 'textprop', length: 1})
-    #     var id = popup_create('', {textprop: 'textprop'})
-    #     tab sp
-    #     sil e
-    #     popup_setoptions(id, {textprop: 'textprop', textpropwin: 1000})
-    #     echom popup_getoptions(id).textpropwin
-    #
-    #     # expected: 1000
-    #     # actual: 1002
-    #
-    # Is it a Vim bug?
-    #
-    # Idea: `popup_setoptions()`  is fine  for popups in  the current  tab page.
-    # But for popups in other tab pages, I guess you need to close and re-create
-    # the popups entirely.
-    # All  in all,  it  might be  simpler  to just  close  and re-create  popups
-    # regardless of where they are.
-    #
-    # Try to not write too much new code.
-    # Borrow as much as possible from `MirrorPopupsOnAllWindows()`.
-    #}}}
-    for [textprop, win2popup] in db[buf]['virtualtexts']
+    for [textprop, win2popup] in db[buf]
             ->mapnew((_, v) => v.win2popup)
             ->items()
         # We need to do that for *all* windows displaying the buffer.{{{
@@ -598,6 +608,9 @@ def RemoveWipedBuffersFromDb() #{{{3
     var buf: string = expand('<abuf>')
     if has_key(db, buf)
         remove(db, buf)
+    endif
+    if has_key(counters, buf)
+        remove(counters, buf)
     endif
 enddef
 
