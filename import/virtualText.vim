@@ -2,15 +2,14 @@ vim9 noclear
 
 const TYPE_PREFIX: string = 'virtualText'
 
-# TODO: We should be able  to add virtual text in an  arbitrary buffer; not just
-# the current one.
-
-# TODO: Truncate the virtual  text so that it doesn't overflow  beyond the right
-# border of a window.  Use `popup_settext()` to reset the text.
-
 # TODO: We should be able to use different highlight groups for different chunks
 # of the virtual text.  This would be useful, for example, to highlight a prefix
 # in a different color.
+
+# TODO: We should be able  to add virtual text in an  arbitrary buffer; not just
+# the current one.  When you start working on this feature, make sure to replace
+# all `col([lnum, '$'])` with sth like `getbufline(buf, lnum)->len()`.
+# Similar refactorings for `line()`, `getline()`, ...
 
 # TODO: Implement `VirtualTextClear()`{{{
 #
@@ -109,8 +108,20 @@ var counters: dict<number> = {}
 
 # Autocmds {{{1
 
-augroup VirtualTextReplicatePopups | au!
+augroup VirtualText | au!
     au BufWinLeave,QuitPre * CloseStalePopups()
+    # `BufWinLeave` is not fired if the buffer is still displayed in another window.{{{
+    #
+    # Example:
+    #
+    #     :vs
+    #     :enew
+    #
+    # And yet,  we still  want to  close stale  popups if  the window  no longer
+    # displays a buffer containing virtual texts.
+    #}}}
+    au BufLeave * MaybeCloseStalePopups('on next BufEnter')
+
     # Do *not* mirror popups on `WinEnter`.{{{
     #
     # Because  the current  buffer might  be still  wrong on  `WinEnter`.  As  a
@@ -162,6 +173,7 @@ augroup VirtualTextReplicatePopups | au!
     # it should.
     #}}}
     au WinNew * au SafeState * ++once MirrorPopups()
+
     au BufWipeOut * RemoveWipedBuffersFromDb()
 augroup END
 
@@ -169,10 +181,17 @@ augroup END
 # Interface {{{2
 export def VirtualTextAdd(props: dict<any>) #{{{3
     var text: string = props.text
+    var length: number = props.length
 
     var lnum: number = props.lnum
+    if lnum <= 0 || lnum > line('$')
+        return
+    endif
+
     var col: number = props.col
-    var length: number = props.length
+    if col <= 0 || col > col([lnum, '$'])
+        return
+    endif
 
     var highlight_real: string = has_key(props, 'highlights')
         && has_key(props.highlights, 'real')
@@ -257,7 +276,6 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
             zindex: 1,
             tabpage: win_id2tabwin(winid)[0],
             })
-
         extend(db[buf], {[TYPE_PREFIX .. type_id]: {
             highlight_real: highlight_real,
             padding: left_padding,
@@ -265,6 +283,7 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
             text: text,
             win2popup: {[winid]: popup_id},
             }})
+        AdjustVirtualTextLength(popup_id)
     endfor
 
     # Vim  automatically clears  all text  properties  from a  buffer when  it's
@@ -273,7 +292,7 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
         au! * <buffer>
         au BufUnload <buffer> SaveTextPropertiesBeforeReload()
         au BufReadPost <buffer> RestoreTextPropertiesAfterReload()
-            | FixPopups()
+            | ReattachPopups()
     augroup END
 enddef
 
@@ -339,13 +358,13 @@ def UpdatePadding(buf: number, start: number, ...l: any) #{{{3
     endfor
 enddef
 
-def CloseStalePopups() #{{{3
-    var buf: number = expand('<abuf>')->str2nr()
+def CloseStalePopups(arg_buf = 0, arg_curwin = 0) #{{{3
+    var buf: number = arg_buf != 0 ? arg_buf : expand('<abuf>')->str2nr()
     # return if the buffer doesn't have any virtual text
     if !db->has_key(buf)
         return
     endif
-    var curwin: number = win_getid()
+    var curwin: number = arg_curwin != 0 ? arg_curwin : win_getid()
     var win2popup: dict<number>
     for textprop in db[buf]->keys()
         win2popup = db[buf][textprop]['win2popup']
@@ -375,6 +394,19 @@ def CloseStalePopups() #{{{3
     endfor
 enddef
 
+def MaybeCloseStalePopups(when: string, arg_buf = 0, winid = 0) #{{{3
+    if when == 'on next BufEnter'
+        var buf: number = expand('<abuf>')->str2nr()
+        var curwin: number = win_getid()
+        exe printf('au BufEnter * ++once MaybeCloseStalePopups("now", %d, %d)', buf, curwin)
+
+    elseif when == 'now'
+        if winbufnr(winid) != arg_buf
+            CloseStalePopups(arg_buf, winid)
+        endif
+    endif
+enddef
+
 def MirrorPopups() #{{{3
     var buf: string = expand('<abuf>')
     var curwin: number = win_getid()
@@ -383,11 +415,13 @@ def MirrorPopups() #{{{3
     # return if the buffer doesn't have any virtual text
     if !db->has_key(buf)
     # bail out if the popups have already been created on the current window
-    # TODO: Is `TYPE_PREFIX .. counters[buf]` correct?
+    # FIXME: Is `TYPE_PREFIX .. counters[buf]` correct?
     # What if the the last virtual text has been removed, and the db has been updated?
     # It will probably raise an error...
     # Maybe we need another dictionary which maps buffers to the virtual texts they contain...
-    || db[buf][TYPE_PREFIX .. counters[buf]]['win2popup']->keys()->index(string(curwin)) >= 0
+    || db[buf][TYPE_PREFIX .. counters[buf]]['win2popup']
+        ->keys()
+        ->index(string(curwin)) >= 0
         return
     endif
 
@@ -419,6 +453,7 @@ def MirrorPopups() #{{{3
 
         # replicate popup in current window
         var new_popupid: number = popup_create(text, opts)
+        AdjustVirtualTextLength(new_popupid)
 
         # update the db
         extend(win2popup, {[curwin]: new_popupid})
@@ -472,7 +507,7 @@ def RestoreTextPropertiesAfterReload() #{{{3
     endfor
 enddef
 
-def FixPopups() #{{{3
+def ReattachPopups() #{{{3
 # Problem: After a buffer is reloaded, the popup windows are still there, but they're no longer visible.{{{
 #
 # When attached to a text property, a popup has 3 text-property-related options:
@@ -517,6 +552,9 @@ def FixPopups() #{{{3
         return
     endif
 
+    # TODO: What if the  popups have been manually closed (e.g.  with our custom
+    # mappings `=d` or  `zp`)?  Should we bail out?  Or  should we re-create the
+    # popups and continue?
     for [textprop, win2popup] in db[buf]
             ->mapnew((_, v) => v.win2popup)
             ->items()
@@ -550,4 +588,92 @@ def RemoveWipedBuffersFromDb() #{{{3
         remove(counters, buf)
     endif
 enddef
+#}}}2
+# Utilities {{{2
+def AdjustVirtualTextLength(popup_id: number) #{{{3
+# FIXME: Truncate the virtual text so that it doesn't overflow beyond the right border of a window.{{{
+#
+# Issue: No event is fired when a window is moved; so we can't truncate the text
+# after sth like `:sp  | wincmd L`.  We would need `:h  todo /WinMoved`, and
+# `:h todo /WinResized`.
+# In the  meantime, we need to  use a timer.   When the callback is  invoked, it
+# should  iterate over  all  the popup  ids implementing  virtual  texts in  the
+# windows of  the current tab  page.
+#
+# To  get better  performance, I  think we'll  need to  cache that  info into  a
+# tab-local  variable.  The  cache should  be  cleared when  the layout  changes
+# (check whether `winrestcmd()` and/or `winlayout()` has changed).
+# I don't  think we  can use  a script-local db,  whose keys  would be  tab page
+# numbers, because a tab page number can change.
+#
+# Update: We've started  implemented a fix, but  it doesn't work when  we insert
+# text and make the line longer.
+# From `UpdatePadding()`, use `popup_settext()` to reset the text.
+# Also, if we  close a window and  there is more space, the  virtual text should
+# take that new space.  For that, we would need `:h todo /WinClose`.
+#
+# ---
+#
+# When you're done, do a few tests.
+#
+# Test 1:
+#
+# Insert a lot of characters on a line which doesn't contain any virtual text.
+# Then, move the cursor forward on that line.
+# At no point should some virtual text be visible in the tabline; like here:
+# https://github.com/vim/vim/issues/7807#issuecomment-776424415
+#
+# Test 2:
+#
+# Execute `:lefta  89vnew`: no virtual  text should  be visible in  the tabline;
+# like here: https://github.com/vim/vim/issues/7807
+#
+# Note that we can't  really fix these Vim bugs; i.e. the  popups might still be
+# wrongly positioned in the tabline.  But if we correctly correctly truncate the
+# text in the  popups up to an empty  string, then we shouldn't see  any text in
+# the tabline.
+#
+# Test 3:
+#
+# Execute `:lefta vnew`:  you should be in the (empty)  left viewport, while the
+# right one should display the virtual texts.
+# Now, keep  executing `:vert  res +1` until  only 1 character  is visible  in a
+# virtual text.   After the next `:vert  res +1`, this last  character should no
+# longer  be  visible.  That's  not  the  case  right  now; the  last  character
+# of  the  virtual  text  remains  visible,  and  the  padding  gets  truncated:
+# https://github.com/vim/vim/issues/7808
+#}}}
 
+    # TODO: This looks inefficient; the buffer to which a popup is attached cannot change.
+    # It doesn't make  sense to recompute this all the  time; remember that this
+    # function is  going to be  invoked on every  keypress when you  insert some
+    # character on a line which contains some virtual text.
+    # Try to save this info into a separate db.
+    var buf: number = popup_getoptions(popup_id).textpropwin->winbufnr()
+    var type: string = popup_id->popup_getoptions().textprop
+    # TODO: `prop_find()` might be a bit slow.
+    # Especially if the buffer is big.
+    # Could we improve this by caching some info?
+    # Same question wherever we've used `prop_find()` in this script.
+    var prop_find = prop_find({type: type, bufnr: buf}, 'f')
+    if prop_find == {}
+        prop_find = prop_find({type: type, bufnr: buf}, 'b')
+    endif
+    var lnum: number = prop_find.lnum
+    var lastcol: number = col([lnum, '$'])
+    var text: string = db[buf][type]['text']
+        ->strpart(0, winwidth(0) - 1 - lastcol - 1)
+    popup_settext(popup_id, text)
+enddef
+
+timer_start(50, () => AdjustVirtualTextInAllWindows(), {repeat: -1})
+def AdjustVirtualTextInAllWindows()
+    var winids: list<number> = gettabinfo()[0].windows
+    for popup_id in winids
+              ->mapnew((_, v) => v->winbufnr())
+              ->filter((_, v) => db->has_key(v))
+              ->mapnew((_, v) => db[v]->values()->mapnew((_, v) => v.win2popup->values()))
+              ->flattennew()
+        AdjustVirtualTextLength(popup_id)
+    endfor
+enddef
