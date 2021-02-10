@@ -666,7 +666,7 @@ def AdjustVirtualTextLength(popup_id: number) #{{{3
     popup_settext(popup_id, text)
 enddef
 
-timer_start(50, () => AdjustVirtualTextInAllWindows(), {repeat: -1})
+# timer_start(50, () => AdjustVirtualTextInAllWindows(), {repeat: -1})
 def AdjustVirtualTextInAllWindows()
     var winids: list<number> = gettabinfo()[0].windows
     for popup_id in winids
