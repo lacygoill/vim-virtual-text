@@ -2,6 +2,21 @@ vim9 noclear
 
 const TYPE_PREFIX: string = 'virtualText'
 
+# TODO: We had  many issues which –  I think –  were due to the  text properties
+# being local to a buffer.  Try to make them global to see whether it simplifies
+# the code, and makes it more reliable.
+
+# FIXME: `:5d | w | e | sil undo | sil undo`
+#
+# There is 1 stale virtual text.
+#
+# ---
+#
+# Right before reloading a buffer, Vim automatically starts a new change.
+# That's why we can undo even if the undo tree was empty initially.
+# But why do we lose the virtual texts when we undo?
+# The popups are still there; the text properties are also still there...
+
 # TODO: We should be able to use different highlight groups for different chunks
 # of the virtual text.  This would be useful, for example, to highlight a prefix
 # in a different color.
@@ -433,11 +448,17 @@ def MirrorPopups() #{{{3
 
         var opts: dict<any>
         if win2popup->values() != []
-            # derive the  options of our new  popup from an existing  one; let's
-            # pick the first one arbitrarily (hence `[0]`)
+            # Derive the  options of our new  popup from an existing  one.
+            # Out of all the windows where  it's displayed, let's pick the first
+            # one arbitrarily (hence `[0]`).
+            #
             # TODO: Instead, maybe we should use a new key in the db.
             # It would be updated on some event(s).
             # It would match a window ID displaying the popup we want to mirror...
+            #
+            # Update: This looks brittle.   What if we have  deleted the virtual
+            # text from a certain window.  For  our code to work as expected, do
+            # we need to pick the right window (instead of simply the first one)?
             opts = win2popup->values()[0]->popup_getoptions()
         else
             opts = db[buf][textprop]['fallback_opts']
@@ -463,23 +484,40 @@ enddef
 def SaveTextPropertiesBeforeReload() #{{{3
 # the lines on which we applied text properties might have been moved,
 # we need to update the db to get their new current positions
-    var buf: string = expand('<abuf>')
-    if !db->has_key(buf)
+    var buf: number = expand('<abuf>')->str2nr()
+    # `bufwinid(buf) == -1` is necessary when we quit Vim.{{{
+    #
+    # Because then, `BufUnload`  is fired for *all* buffers,  including the ones
+    # which are hidden.  This is a problem for `prop_find()` which can only work
+    # on the current buffer (or on a visible buffer via `win_execute()`).
+    #
+    # In any  case, for such  a `BufUnload`, we don't  need to restore  the text
+    # properties, so we don't care about saving them.
+    #}}}
+    if !db->has_key(buf) || bufwinid(buf) == -1
         return
     endif
 
     var types: list<string> = db[buf]->keys()
     for type in types
+        var newpos: dict<any>
         try
-            var newpos: dict<any> = {type: type}->prop_find('f')
-            if newpos == {}
-                newpos = {type: type}->prop_find('b')
-            endif
-            db[buf][type]['pos'] = newpos
-            remove(db[buf][type]['pos'], 'type')
-        # Vim:E971: Property type virtualText123 does not exist
+            newpos = {type: type, bufnr: buf}->prop_find('f')
+        # E971: Property type virtualText123 does not exist
+        # Happens if we delete a virtual text interactively, then reload the buffer twice.
         catch /^Vim\%((\a\+)\)\=:E971:/
+            continue
         endtry
+
+        if newpos == {}
+            newpos = {type: type, bufnr: buf}->prop_find('b')
+        endif
+
+        if newpos->has_key('type')
+            remove(newpos, 'type')
+        endif
+
+        db[buf][type]['pos'] = newpos
     endfor
 enddef
 
@@ -493,6 +531,14 @@ def RestoreTextPropertiesAfterReload() #{{{3
         var type_info: dict<any> = db[buf][type]
         var highlight: string = type_info.highlight_real
         var pos: dict<number> = type_info.pos
+
+        # the virtual text  could have been deleted with  an interactive command
+        # (`dd`, `:123d`, ...)
+        if pos == {}
+            remove(db[buf], type)
+            continue
+        endif
+
         prop_type_add(type, {
             bufnr: buf,
             highlight: highlight,
@@ -566,15 +612,21 @@ def ReattachPopups() #{{{3
         #     # no more virtual texts
         #}}}
         for [textpropwin, id] in win2popup->items()
-            popup_setoptions(id, {
-                textprop: textprop,
-                # We need to also reset `textpropwin`.{{{
-                #
-                # Resetting `textprop` causes `textpropwin` to be reset with the
-                # id of the current window: https://github.com/vim/vim/issues/7785
-                #}}}
-                textpropwin: textpropwin->str2nr(),
-                })
+            try
+                popup_setoptions(id, {
+                    textprop: textprop,
+                    # We need to also reset `textpropwin`.{{{
+                    #
+                    # Resetting `textprop` causes `textpropwin` to be reset with the
+                    # id of the current window: https://github.com/vim/vim/issues/7785
+                    #}}}
+                    textpropwin: textpropwin->str2nr(),
+                    })
+            # E475: Invalid argument: virtualText123
+            # the  virtual text  could  have been  deleted  with an  interactive
+            # command (`dd`, `:123d`, ...)
+            catch /^Vim\%((\a\+)\)\=:E475:/
+            endtry
         endfor
     endfor
 enddef
@@ -591,11 +643,19 @@ enddef
 #}}}2
 # Utilities {{{2
 def AdjustVirtualTextLength(popup_id: number) #{{{3
-# FIXME: Truncate the virtual text so that it doesn't overflow beyond the right border of a window.{{{
+# FIXME: Hide some part of the virtual text so that it doesn't overflow beyond the right border of a window.{{{
+#
+# Here is how to compute the new mask.
+# Use  `popup_getpos().core_col`   to  get  the  screen   column  position,  and
+# compare it  to `win_screenpos(winid)[1]  + winwidth(winid)` (where  `winid` is
+# `popup_getoptions(popup_id).textpropwin`).
 #
 # Issue: No event is fired when a window is moved; so we can't truncate the text
 # after sth like `:sp  | wincmd L`.  We would need `:h  todo /WinMoved`, and
 # `:h todo /WinResized`.
+# Also, no  event is fired  when we  close a window;  so we can't  reclaim newly
+# available space after closing a window.  We would nee `:h todo /WinClose`.
+#
 # In the  meantime, we need to  use a timer.   When the callback is  invoked, it
 # should  iterate over  all  the popup  ids implementing  virtual  texts in  the
 # windows of  the current tab  page.
@@ -605,68 +665,28 @@ def AdjustVirtualTextLength(popup_id: number) #{{{3
 # (check whether `winrestcmd()` and/or `winlayout()` has changed).
 # I don't  think we  can use  a script-local db,  whose keys  would be  tab page
 # numbers, because a tab page number can change.
-#
-# Update: We've started  implemented a fix, but  it doesn't work when  we insert
-# text and make the line longer.
-# From `UpdatePadding()`, use `popup_settext()` to reset the text.
-# Also, if we  close a window and  there is more space, the  virtual text should
-# take that new space.  For that, we would need `:h todo /WinClose`.
-#
-# ---
-#
-# When you're done, do a few tests.
-#
-# Test 1:
-#
-# Insert a lot of characters on a line which doesn't contain any virtual text.
-# Then, move the cursor forward on that line.
-# At no point should some virtual text be visible in the tabline; like here:
-# https://github.com/vim/vim/issues/7807#issuecomment-776424415
-#
-# Test 2:
-#
-# Execute `:lefta  89vnew`: no virtual  text should  be visible in  the tabline;
-# like here: https://github.com/vim/vim/issues/7807
-#
-# Note that we can't  really fix these Vim bugs; i.e. the  popups might still be
-# wrongly positioned in the tabline.  But if we correctly correctly truncate the
-# text in the  popups up to an empty  string, then we shouldn't see  any text in
-# the tabline.
-#
-# Test 3:
-#
-# Execute `:lefta vnew`:  you should be in the (empty)  left viewport, while the
-# right one should display the virtual texts.
-# Now, keep  executing `:vert  res +1` until  only 1 character  is visible  in a
-# virtual text.   After the next `:vert  res +1`, this last  character should no
-# longer  be  visible.  That's  not  the  case  right  now; the  last  character
-# of  the  virtual  text  remains  visible,  and  the  padding  gets  truncated:
-# https://github.com/vim/vim/issues/7808
 #}}}
 
-    # TODO: This looks inefficient; the buffer to which a popup is attached cannot change.
-    # It doesn't make  sense to recompute this all the  time; remember that this
-    # function is  going to be  invoked on every  keypress when you  insert some
-    # character on a line which contains some virtual text.
-    # Try to save this info into a separate db.
-    var buf: number = popup_getoptions(popup_id).textpropwin->winbufnr()
-    var type: string = popup_id->popup_getoptions().textprop
-    # TODO: `prop_find()` might be a bit slow.
-    # Especially if the buffer is big.
-    # Could we improve this by caching some info?
-    # Same question wherever we've used `prop_find()` in this script.
-    var prop_find = prop_find({type: type, bufnr: buf}, 'f')
-    if prop_find == {}
-        prop_find = prop_find({type: type, bufnr: buf}, 'b')
+    var popup_options: dict<any> = popup_getoptions(popup_id)
+
+    if !popup_options->has_key('textpropwin')
+        return
     endif
-    var lnum: number = prop_find.lnum
-    var lastcol: number = col([lnum, '$'])
-    var text: string = db[buf][type]['text']
-        ->strpart(0, winwidth(0) - 1 - lastcol - 1)
-    popup_settext(popup_id, text)
+
+    var winid: number = popup_options.textpropwin
+    var maxcol: number = win_screenpos(winid)[1]
+        + winwidth(winid)
+        - popup_getpos(popup_id).col
+    var hide_overflow: list<number> = [maxcol + 1, -1, 1, 1]
+
+    var left_padding: number = popup_options.padding[3]
+    var hide_padding: list<number> = [1, left_padding, 1, 1]
+    var mask: list<list<number>> = [hide_padding, hide_overflow]
+
+    popup_setoptions(popup_id, {mask: mask})
 enddef
 
-# timer_start(50, () => AdjustVirtualTextInAllWindows(), {repeat: -1})
+timer_start(25, () => AdjustVirtualTextInAllWindows(), {repeat: -1})
 def AdjustVirtualTextInAllWindows()
     var winids: list<number> = gettabinfo()[0].windows
     for popup_id in winids
