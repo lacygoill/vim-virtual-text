@@ -1,4 +1,4 @@
-vim9 noclear
+vim9script noclear
 
 const LOGFILE: string = '/tmp/virtual_text_tests.log'
 delete(LOGFILE)

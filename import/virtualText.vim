@@ -1,4 +1,4 @@
-vim9 noclear
+vim9script noclear
 
 const TYPE_PREFIX: string = 'virtualText'
 
@@ -577,7 +577,7 @@ def ReattachPopups() #{{{3
 # But after  a buffer  is reloaded,  such a popup  loses its  `textprop` option,
 # which probably prevents it from being visible.
 #
-#     vim9
+#     vim9script
 #     setline(1, 'text')
 #     sil sav! /tmp/file
 #     var buf = bufnr('%')

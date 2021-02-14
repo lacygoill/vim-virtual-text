@@ -1,4 +1,4 @@
-vim9 noclear
+vim9script noclear
 
 const SETUP_SCRIPT: string = expand('<sfile>:p:h') .. '/setup.vim'
 

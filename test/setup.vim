@@ -1,4 +1,4 @@
-vim9 noclear
+vim9script noclear
 
 var lines: list<string> =<< trim END
     I met a traveller from an antique land,
