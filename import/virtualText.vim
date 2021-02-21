@@ -443,7 +443,7 @@ def MirrorPopups() #{{{3
     # iterate over the virtual texts
     # (i.e. their text, the name of their text property, and their popup ids)
     for [text, textprop, win2popup] in db[buf]
-        ->mapnew((k, v) => [v.text, k, v.win2popup])
+        ->mapnew((k, v: dict<any>): list<any> => [v.text, k, v.win2popup])
         ->values()
 
         var opts: dict<any>
@@ -585,7 +585,7 @@ def ReattachPopups() #{{{3
 #     prop_add(1, 1, {type: 'textprop', length: 1, bufnr: buf})
 #     var id = popup_create('', {textprop: 'textprop'})
 #     sil e
-#     echo popup_getoptions(id)->keys()->filter((_, v) => v =~ 'textprop')
+#     echo popup_getoptions(id)->keys()->filter((_, v: string): bool => v =~ 'textprop')
 #
 #     ['textpropid', 'textpropwin']~
 #
@@ -602,7 +602,7 @@ def ReattachPopups() #{{{3
     # mappings `=d` or  `zp`)?  Should we bail out?  Or  should we re-create the
     # popups and continue?
     for [textprop, win2popup] in db[buf]
-            ->mapnew((_, v) => v.win2popup)
+            ->mapnew((_, v: dict<any>): dict<number> => v.win2popup)
             ->items()
         # We need to do that for *all* windows displaying the buffer.{{{
         #
@@ -686,14 +686,17 @@ def AdjustVirtualTextLength(popup_id: number) #{{{3
     popup_setoptions(popup_id, {mask: mask})
 enddef
 
-timer_start(25, () => AdjustVirtualTextInAllWindows(), {repeat: -1})
 def AdjustVirtualTextInAllWindows()
     var winids: list<number> = gettabinfo()[0].windows
     for popup_id in winids
-              ->mapnew((_, v) => v->winbufnr())
-              ->filter((_, v) => db->has_key(v))
-              ->mapnew((_, v) => db[v]->values()->mapnew((_, v) => v.win2popup->values()))
+              ->mapnew((_, v: number): number => v->winbufnr())
+              ->filter((_, v: number): bool => db->has_key(v))
+              ->mapnew((_, v: number): list<list<number>> =>
+                    db[v]
+                        ->values()
+                        ->mapnew((_, v) => v.win2popup->values()))
               ->flattennew()
         AdjustVirtualTextLength(popup_id)
     endfor
 enddef
+timer_start(25, () => AdjustVirtualTextInAllWindows(), {repeat: -1})

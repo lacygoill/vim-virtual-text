@@ -5,8 +5,8 @@ delete(LOGFILE)
 
 var testdir: string = expand('<sfile>:p:h')
 var current_script: string = expand('<sfile>:t')
-var tests: list<string> =
-    testdir->readdir((n) => n =~ '.vim$' && n != current_script)
+var tests: list<string> = testdir
+    ->readdir((n: string): bool => n =~ '.vim$' && n != current_script)
 
 # Don't write this in a function.
 # We don't want Vim to abort on an error; we want all the tests to be run.
