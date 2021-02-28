@@ -118,8 +118,8 @@ const TYPE_PREFIX: string = 'virtualText'
 # in turn  causes popups attached to  text properties to lose  their `textprop*`
 # options.  This needs to be fixed for virtual texts to persist across reloads.
 #}}}
-var db: dict<dict<any>> = {}
-var counters: dict<number> = {}
+var db: dict<dict<any>>
+var counters: dict<number>
 
 # Autocmds {{{1
 
@@ -243,8 +243,8 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
     var type_id: number
     if !db->has_key(buf)
         listener_add(UpdatePadding, buf)
-        extend(db, {[buf]: {}})
-        extend(counters, {[buf]: 1})
+        db[buf] = {}
+        counters[buf] = 1
     else
         counters[buf] = counters[buf] + 1
     endif
@@ -291,13 +291,13 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
             zindex: 1,
             tabpage: win_id2tabwin(winid)[0],
             })
-        extend(db[buf], {[TYPE_PREFIX .. type_id]: {
+        db[buf][TYPE_PREFIX .. type_id] = {
             highlight_real: highlight_real,
             padding: left_padding,
             pos: {},
             text: text,
             win2popup: {[winid]: popup_id},
-            }})
+            }
         AdjustVirtualTextLength(popup_id)
     endfor
 
@@ -400,7 +400,7 @@ def CloseStalePopups(arg_buf = 0, arg_curwin = 0) #{{{3
             # relevant  popup (because  more up-to-date).   But that's  bound to
             # fail if there's no longer any popup.  So, we need a fallback.
             #}}}
-            db[buf][textprop]->extend({fallback_opts: popup_getoptions(win2popup[curwin])})
+            db[buf][textprop]['fallback_opts'] = popup_getoptions(win2popup[curwin])
             win2popup[curwin]->popup_close()
             # if the  window no longer  displays the current buffer,  remove its
             # key from `win2popup`
@@ -477,7 +477,7 @@ def MirrorPopups() #{{{3
         AdjustVirtualTextLength(new_popupid)
 
         # update the db
-        extend(win2popup, {[curwin]: new_popupid})
+        win2popup[curwin] = new_popupid
     endfor
 enddef
 
@@ -687,7 +687,7 @@ def AdjustVirtualTextLength(popup_id: number) #{{{3
 enddef
 
 def AdjustVirtualTextInAllWindows()
-    var winids: list<number> = gettabinfo()[0].windows
+    var winids: list<number> = gettabinfo()[0]['windows']
     for popup_id in winids
               ->mapnew((_, v: number): number => v->winbufnr())
               ->filter((_, v: number): bool => db->has_key(v))
