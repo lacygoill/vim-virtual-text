@@ -321,7 +321,7 @@ def RemoveStaleVirtualText(buf: number, lnum: number) #{{{3
     var proplist: list<dict<any>> = prop_list(lnum)
     var idx: number
     while idx >= 0
-        idx = proplist->match(TYPE_PREFIX)
+        idx = match(proplist, TYPE_PREFIX)
         if idx == -1
             break
         endif
@@ -353,7 +353,7 @@ def UpdatePadding(buf: number, start: number, ...l: any) #{{{3
 
     # get info about the text property implementing the virtual text on the changed line
     var prop_list: list<dict<any>> = start->prop_list()
-    var i: number = prop_list->match(TYPE_PREFIX)
+    var i: number = match(prop_list, TYPE_PREFIX)
     if i == -1
         return
     endif
@@ -443,7 +443,7 @@ def MirrorPopups() #{{{3
     # iterate over the virtual texts
     # (i.e. their text, the name of their text property, and their popup ids)
     for [text, textprop, win2popup] in db[buf]
-        ->mapnew((k, v: dict<any>): list<any> => [v.text, k, v.win2popup])
+        ->mapnew((k: string, v: dict<any>): list<any> => [v.text, k, v.win2popup])
         ->values()
 
         var opts: dict<any>
@@ -687,15 +687,15 @@ def AdjustVirtualTextLength(popup_id: number) #{{{3
 enddef
 
 def AdjustVirtualTextInAllWindows()
-    var winids: list<number> = gettabinfo()[0]['windows']
-    for popup_id in winids
-              ->mapnew((_, v: number): number => v->winbufnr())
-              ->filter((_, v: number): bool => db->has_key(v))
-              ->mapnew((_, v: number): list<list<number>> =>
-                    db[v]
-                        ->values()
-                        ->mapnew((_, v) => v.win2popup->values()))
-              ->flattennew()
+    var popup_ids: list<number> = gettabinfo()[0]['windows']
+        ->mapnew((_, v: number): number => winbufnr(v))
+        ->filter((_, v: number): bool => db->has_key(v))
+        ->mapnew((_, v: number): list<list<number>> =>
+              db[v]
+                  ->values()
+                  ->mapnew((__, w) => w.win2popup->values()))
+        ->flattennew()
+    for popup_id in popup_ids
         AdjustVirtualTextLength(popup_id)
     endfor
 enddef
