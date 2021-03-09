@@ -23,7 +23,7 @@ const TYPE_PREFIX: string = 'virtualText'
 
 # TODO: We should be able  to add virtual text in an  arbitrary buffer; not just
 # the current one.  When you start working on this feature, make sure to replace
-# all `col([lnum, '$'])` with sth like `getbufline(buf, lnum)->len()`.
+# all `col([lnum, '$'])` with sth like `getbufline(buf, lnum)->get(0, '')->strlen()`.
 # Similar refactorings for `line()`, `getline()`, ...
 
 # TODO: Implement `VirtualTextClear()`{{{
