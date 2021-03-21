@@ -208,12 +208,12 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
         return
     endif
 
-    var highlight_real: string = has_key(props, 'highlights')
-        && has_key(props.highlights, 'real')
+    var highlight_real: string = props->has_key('highlights')
+        && props.highlights->has_key('real')
         ? props.highlights.real
         : 'Normal'
-    var highlight_virtual: string = has_key(props, 'highlights')
-        && has_key(props.highlights, 'virtual')
+    var highlight_virtual: string = props->has_key('highlights')
+        && props.highlights->has_key('virtual')
         ? props.highlights.virtual
         : 'Normal'
 
@@ -633,10 +633,10 @@ enddef
 
 def RemoveWipedBuffersFromDb() #{{{3
     var buf: string = expand('<abuf>')
-    if has_key(db, buf)
+    if db->has_key(buf)
         remove(db, buf)
     endif
-    if has_key(counters, buf)
+    if counters->has_key(buf)
         remove(counters, buf)
     endif
 enddef
