@@ -246,7 +246,7 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
         db[buf] = {}
         counters[buf] = 1
     else
-        counters[buf] = counters[buf] + 1
+        counters[buf] += 1
     endif
     # A dummy counter is probably the only reliable way to avoid conflicts.{{{
     #
@@ -267,13 +267,14 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
         prop_type_add(TYPE_PREFIX .. type_id, {
             bufnr: buf,
             highlight: highlight_real,
-            })
+            combine: false,
+        })
     endif
     prop_add(lnum, col, {
         bufnr: buf,
         length: length,
         type: TYPE_PREFIX .. type_id,
-        })
+    })
 
     var left_padding: number = col([lnum, '$']) - col - length + 1
     # iterate over *all* the windows where the current buffer is displayed
@@ -290,14 +291,14 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
             wrap: false,
             zindex: 1,
             tabpage: win_id2tabwin(winid)[0],
-            })
+        })
         db[buf][TYPE_PREFIX .. type_id] = {
             highlight_real: highlight_real,
             padding: left_padding,
             pos: {},
             text: text,
             win2popup: {[winid]: popup_id},
-            }
+        }
         AdjustVirtualTextLength(popup_id)
     endfor
 
@@ -346,7 +347,11 @@ def RemoveStaleVirtualText(buf: number, lnum: number) #{{{3
     endwhile
 enddef
 
-def UpdatePadding(buf: number, start: number, ...l: any) #{{{3
+def UpdatePadding( #{{{3
+    buf: number,
+    start: number,
+    _, _, _
+)
     if start > line('$') || !db->has_key(buf)
         return
     endif
@@ -369,7 +374,7 @@ def UpdatePadding(buf: number, start: number, ...l: any) #{{{3
         popup_setoptions(popup_id, {
             mask: [[1, left_padding, 1, 1]],
             padding: [0, 0, 0, left_padding],
-            })
+        })
     endfor
 enddef
 
@@ -409,7 +414,11 @@ def CloseStalePopups(arg_buf = 0, arg_curwin = 0) #{{{3
     endfor
 enddef
 
-def MaybeCloseStalePopups(when: string, arg_buf = 0, winid = 0) #{{{3
+def MaybeCloseStalePopups( #{{{3
+    when: string,
+    arg_buf = 0,
+    winid = 0
+)
     if when == 'on next BufEnter'
         var buf: number = expand('<abuf>')->str2nr()
         var curwin: number = win_getid()
@@ -470,7 +479,7 @@ def MirrorPopups() #{{{3
             mask: [[1, left_padding, 1, 1]],
             tabpage: curtab,
             textpropwin: curwin,
-            })
+        })
 
         # replicate popup in current window
         var new_popupid: number = popup_create(text, opts)
@@ -542,12 +551,13 @@ def RestoreTextPropertiesAfterReload() #{{{3
         prop_type_add(type, {
             bufnr: buf,
             highlight: highlight,
-            })
+            combine: false,
+        })
         prop_add(pos.lnum, pos.col, {
             bufnr: buf,
             length: pos.length,
             type: type,
-            })
+        })
         # don't need the info anymore, let's clear it to keep the db as simple/light as possible
         type_info.pos = {}
     endfor
@@ -621,7 +631,7 @@ def ReattachPopups() #{{{3
                     # id of the current window: https://github.com/vim/vim/issues/7785
                     #}}}
                     textpropwin: textpropwin->str2nr(),
-                    })
+                })
             # E475: Invalid argument: virtualText123
             # the  virtual text  could  have been  deleted  with an  interactive
             # command (`dd`, `:123d`, ...)
@@ -693,10 +703,10 @@ def AdjustVirtualTextInAllWindows()
         ->mapnew((_, v: number): list<list<number>> =>
               db[v]
                   ->values()
-                  ->mapnew((__, w) => w.win2popup->values()))
+                  ->mapnew((_, w) => w.win2popup->values()))
         ->flattennew()
     for popup_id in popup_ids
         AdjustVirtualTextLength(popup_id)
     endfor
 enddef
-timer_start(25, () => AdjustVirtualTextInAllWindows(), {repeat: -1})
+timer_start(25, (_) => AdjustVirtualTextInAllWindows(), {repeat: -1})

@@ -28,7 +28,7 @@ VirtualTextAdd({
     length: strlen('shattered'),
     text: 'broken into many pieces',
     highlights: {real: 'DiffAdd', virtual: 'MoreMsg'},
-    })
+})
 
 var sneer_pos: list<number> = searchpos('sneer', 'n')
 VirtualTextAdd({
@@ -37,7 +37,7 @@ VirtualTextAdd({
     length: strlen('sneer'),
     text: 'a contemptuous or mocking smile, remark, or tone',
     highlights: {real: 'DiffAdd', virtual: 'MoreMsg'},
-    })
+})
 
 var ozymandias_pos: list<number> = searchpos('Ozymandias', 'n')
 VirtualTextAdd({
@@ -46,7 +46,7 @@ VirtualTextAdd({
     length: strlen('Ozymandias'),
     text: 'Greek name for Ramesses II, pharaoh of Egypt',
     highlights: {real: 'DiffAdd', virtual: 'MoreMsg'},
-    })
+})
 
 var wreck_pos: list<number> = searchpos('Wreck', 'n')
 VirtualTextAdd({
@@ -55,5 +55,5 @@ VirtualTextAdd({
     length: strlen('Wreck'),
     text: 'something that has been badly damaged or destroyed',
     highlights: {real: 'DiffAdd', virtual: 'MoreMsg'},
-    })
+})
 
