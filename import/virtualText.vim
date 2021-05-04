@@ -246,7 +246,7 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
         db[buf] = {}
         counters[buf] = 1
     else
-        counters[buf] += 1
+        ++counters[buf]
     endif
     # A dummy counter is probably the only reliable way to avoid conflicts.{{{
     #
