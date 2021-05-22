@@ -334,7 +334,7 @@ def RemoveStaleVirtualText(buf: number, lnum: number) #{{{3
         for id in stale_popups
             popup_close(id)
         endfor
-        remove(proplist, idx)
+        proplist->remove(idx)
 
         # remove stale text property
         prop_remove({
@@ -523,7 +523,7 @@ def SaveTextPropertiesBeforeReload() #{{{3
         endif
 
         if newpos->has_key('type')
-            remove(newpos, 'type')
+            newpos->remove('type')
         endif
 
         db[buf][type]['pos'] = newpos
@@ -544,7 +544,7 @@ def RestoreTextPropertiesAfterReload() #{{{3
         # the virtual text  could have been deleted with  an interactive command
         # (`dd`, `:123d`, ...)
         if pos == {}
-            remove(db[buf], type)
+            db[buf]->remove(type)
             continue
         endif
 
@@ -644,10 +644,10 @@ enddef
 def RemoveWipedBuffersFromDb() #{{{3
     var buf: string = expand('<abuf>')
     if db->has_key(buf)
-        remove(db, buf)
+        db->remove(buf)
     endif
     if counters->has_key(buf)
-        remove(counters, buf)
+        counters->remove(buf)
     endif
 enddef
 #}}}2
