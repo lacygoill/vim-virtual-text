@@ -597,7 +597,7 @@ def ReattachPopups() #{{{3
 #     sil e
 #     echo popup_getoptions(id)->keys()->filter((_, v: string): bool => v =~ 'textprop')
 #
-#     ['textpropid', 'textpropwin']~
+#     ['textpropid', 'textpropwin']˜
 #
 # Note that this is only the case if the text property is local to the buffer.
 #}}}

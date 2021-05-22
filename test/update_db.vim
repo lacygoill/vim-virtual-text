@@ -12,7 +12,7 @@ q
 # For example, we don't want this:
 #
 #     :sp | q | echo VirtualTextDb().1.virtualText1.win2popup
-#     {'1005': 1006, '1000': 1001}~
+#     {'1005': 1006, '1000': 1001}˜
 #      ^----------^
 #      should have been removed
 #}}}
