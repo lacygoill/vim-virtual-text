@@ -588,7 +588,7 @@ def ReattachPopups() #{{{3
 # which probably prevents it from being visible.
 #
 #     vim9script
-#     setline(1, 'text')
+#     'text'->setline(1)
 #     sil sav! /tmp/file
 #     var buf = bufnr('%')
 #     prop_type_add('textprop', {bufnr: buf})
