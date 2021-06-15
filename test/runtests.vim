@@ -24,7 +24,7 @@ for test in tests
     popup_clear(true)
     sil! only
     sil! tabonly
-    sil :%bw!
+    sil :% bw!
 endfor
 
 if filereadable(LOGFILE) && !readfile(LOGFILE)->empty()

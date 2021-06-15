@@ -166,7 +166,7 @@ augroup VirtualText | au!
     #     # E716: Key not present in Dictionary: "padding"
     #
     #     :tab sp
-    #     :1tabnext | q
+    #     :1 tabnext | q
     #     # no error
     #
     #     :sp | wincmd w | call feedkeys('ii', 'nxt')
@@ -189,7 +189,7 @@ augroup VirtualText | au!
     #}}}
     au WinNew * au SafeState * ++once MirrorPopups()
 
-    au BufWipeOut * RemoveWipedBuffersFromDb()
+    au BufWipeout * RemoveWipedBuffersFromDb()
 augroup END
 
 # Functions {{{1
