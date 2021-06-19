@@ -1,4 +1,4 @@
-vim9script noclear
+vim9script
 
 const TYPE_PREFIX: string = 'virtualText'
 
