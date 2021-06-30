@@ -1,7 +1,7 @@
 vim9script noclear
 
-exe 'so ' .. expand('<sfile>:p:h') .. '/setup.vim'
-exe 'so ' .. expand('<sfile>:p:h') .. '/setup.vim'
+execute 'source ' .. expand('<sfile>:p:h') .. '/setup.vim'
+execute 'source ' .. expand('<sfile>:p:h') .. '/setup.vim'
 
 # even though we've invoked `VirtualTextAdd()` twice for 4 lines, we should only
 # have 4 popups, and not 8

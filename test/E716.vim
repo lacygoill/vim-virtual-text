@@ -1,9 +1,9 @@
 vim9script noclear
 
-exe 'so ' .. expand('<sfile>:p:h') .. '/setup.vim'
+execute 'source ' .. expand('<sfile>:p:h') .. '/setup.vim'
 
-tab sp
-e
+tab split
+edit
 :1 tabnext
 # `E716` should not be raised
-q
+quit

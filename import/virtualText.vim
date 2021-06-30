@@ -6,7 +6,7 @@ const TYPE_PREFIX: string = 'virtualText'
 # being local to a buffer.  Try to make them global to see whether it simplifies
 # the code, and makes it more reliable.
 
-# FIXME: `:5d | w | e | sil undo | sil undo`
+# FIXME: `:5 delete | write | edit | silent undo | silent undo`
 #
 # There is 1 stale virtual text.
 #
@@ -123,19 +123,19 @@ var counters: dict<number>
 
 # Autocmds {{{1
 
-augroup VirtualText | au!
-    au BufWinLeave,QuitPre * CloseStalePopups()
+augroup VirtualText | autocmd!
+    autocmd BufWinLeave,QuitPre * CloseStalePopups()
     # `BufWinLeave` is not fired if the buffer is still displayed in another window.{{{
     #
     # Example:
     #
-    #     :vs
+    #     :vsplit
     #     :enew
     #
     # And yet,  we still  want to  close stale  popups if  the window  no longer
     # displays a buffer containing virtual texts.
     #}}}
-    au BufLeave * MaybeCloseStalePopups('on next BufEnter')
+    autocmd BufLeave * MaybeCloseStalePopups('on next BufEnter')
 
     # Do *not* mirror popups on `WinEnter`.{{{
     #
@@ -158,27 +158,27 @@ augroup VirtualText | au!
     #
     # For example, using `SafeState`:
     #
-    #     :tab sp | 1tabnext | q
+    #     :tab split | :1 tabnext | quit
     #     # E716: Key not present in Dictionary: "padding"
     #
-    #     :tab sp | 1tabnext
-    #     :q
+    #     :tab split | :1 tabnext
+    #     :quit
     #     # E716: Key not present in Dictionary: "padding"
     #
-    #     :tab sp
-    #     :1 tabnext | q
+    #     :tab split
+    #     :1 tabnext | quit
     #     # no error
     #
-    #     :sp | wincmd w | call feedkeys('ii', 'nxt')
+    #     :split | wincmd w | call feedkeys('ii', 'nxt')
     #     E716: Key not present in Dictionary: "1005"
     #
     # A  timer wouldn't  fix this issue;  but the latter  would be  triggered by
-    # different commands (e.g. `:sp | q`).
+    # different commands (e.g. `:split | quit`).
     #}}}
-    au BufEnter,BufWinEnter * MirrorPopups()
+    autocmd BufEnter,BufWinEnter * MirrorPopups()
     # `WinNew` is necessary if we split a window displaying virtual texts.{{{
     #
-    # And it works no matter how we split: `:sp`, `:vert sp`, `:tab sp`.
+    # And it works no matter how we split: `:split`, `:vertical split`, `:tab split`.
     #}}}
     # OK, but why the delay?{{{
     #
@@ -187,9 +187,9 @@ augroup VirtualText | au!
     # yet; so the guard  at the top of `MirrorPopups()` might  not bail out like
     # it should.
     #}}}
-    au WinNew * au SafeState * ++once MirrorPopups()
+    autocmd WinNew * autocmd SafeState * ++once MirrorPopups()
 
-    au BufWipeout * RemoveWipedBuffersFromDb()
+    autocmd BufWipeout * RemoveWipedBuffersFromDb()
 augroup END
 
 # Functions {{{1
@@ -305,9 +305,9 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
     # Vim  automatically clears  all text  properties  from a  buffer when  it's
     # reloaded; we need to save and restore them.
     augroup VirtualTextPersistAfterReload
-        au! * <buffer>
-        au BufUnload <buffer> SaveTextPropertiesBeforeReload()
-        au BufReadPost <buffer> RestoreTextPropertiesAfterReload()
+        autocmd! * <buffer>
+        autocmd BufUnload <buffer> SaveTextPropertiesBeforeReload()
+        autocmd BufReadPost <buffer> RestoreTextPropertiesAfterReload()
             | ReattachPopups()
     augroup END
 enddef
@@ -422,7 +422,7 @@ def MaybeCloseStalePopups( #{{{3
     if when == 'on next BufEnter'
         var buf: number = expand('<abuf>')->str2nr()
         var curwin: number = win_getid()
-        exe printf('au BufEnter * ++once MaybeCloseStalePopups("now", %d, %d)', buf, curwin)
+        execute printf('autocmd BufEnter * ++once MaybeCloseStalePopups("now", %d, %d)', buf, curwin)
 
     elseif when == 'now'
         if winbufnr(winid) != arg_buf
@@ -589,12 +589,12 @@ def ReattachPopups() #{{{3
 #
 #     vim9script
 #     'text'->setline(1)
-#     sil sav! /tmp/file
+#     silent sav! /tmp/file
 #     var buf = bufnr('%')
 #     prop_type_add('textprop', {bufnr: buf})
 #     prop_add(1, 1, {type: 'textprop', length: 1, bufnr: buf})
 #     var id = popup_create('', {textprop: 'textprop'})
-#     sil e
+#     silent edit
 #     echo popup_getoptions(id)->keys()->filter((_, v: string): bool => v =~ 'textprop')
 #
 #     ['textpropid', 'textpropwin']˜
@@ -618,7 +618,7 @@ def ReattachPopups() #{{{3
         #
         # Otherwise:
         #
-        #     :sp | e | wincmd w
+        #     :split | edit | wincmd w
         #     # no more virtual texts
         #}}}
         for [textpropwin, id] in win2popup->items()
@@ -661,10 +661,10 @@ def AdjustVirtualTextLength(popup_id: number) #{{{3
 # `popup_getoptions(popup_id).textpropwin`).
 #
 # Issue: No event is fired when a window is moved; so we can't truncate the text
-# after sth like `:sp  | wincmd L`.  We would need `:h  todo /WinMoved`, and
-# `:h todo /WinResized`.
+# after sth like `:split | wincmd L`.  We would need `:help todo /WinMoved`, and
+# `:help todo /WinResized`.
 # Also, no  event is fired  when we  close a window;  so we can't  reclaim newly
-# available space after closing a window.  We would nee `:h todo /WinClose`.
+# available space after closing a window.  We would nee `:help todo /WinClose`.
 #
 # In the  meantime, we need to  use a timer.   When the callback is  invoked, it
 # should  iterate over  all  the popup  ids implementing  virtual  texts in  the

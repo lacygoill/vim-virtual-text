@@ -17,22 +17,22 @@ var tests: list<string> = testdir
 #}}}
 for test in tests
     v:errors = []
-    exe 'so ' .. testdir .. '/' .. test
+    execute 'source ' .. testdir .. '/' .. test
     if v:errors != []
         writefile(v:errors, LOGFILE)
     endif
     popup_clear(true)
-    sil! only
-    sil! tabonly
-    sil :% bw!
+    silent! only
+    silent! tabonly
+    silent :% bwipeout!
 endfor
 
 if filereadable(LOGFILE) && !readfile(LOGFILE)->empty()
-    exe 'sp ' .. LOGFILE
+    execute 'split ' .. LOGFILE
 else
     # Some of our  plugins in our config  cause the message to  be erased; let's
     # prevent that by triggering a hit-enter prompt.
     echo ' '
-    echom 'all tests passed'
+    echomsg 'all tests passed'
 endif
 

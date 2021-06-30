@@ -1,9 +1,9 @@
 vim9script noclear
 
-exe 'so ' .. expand('<sfile>:p:h') .. '/setup.vim'
+execute 'source ' .. expand('<sfile>:p:h') .. '/setup.vim'
 
-sp
-q
+split
+quit
 
 # Check the db is correctly updated when we close a window.{{{
 #
@@ -11,7 +11,7 @@ q
 #
 # For example, we don't want this:
 #
-#     :sp | q | echo VirtualTextDb().1.virtualText1.win2popup
+#     :split | quit | echo VirtualTextDb().1.virtualText1.win2popup
 #     {'1005': 1006, '1000': 1001}˜
 #      ^----------^
 #      should have been removed
