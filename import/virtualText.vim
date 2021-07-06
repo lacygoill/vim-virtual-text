@@ -386,8 +386,8 @@ def CloseStalePopups(arg_buf = 0, arg_curwin = 0) #{{{3
     endif
     var curwin: number = arg_curwin != 0 ? arg_curwin : win_getid()
     var win2popup: dict<number>
-    for textprop in db[buf]->keys()
-        win2popup = db[buf][textprop]['win2popup']
+    for virtual_text in db[buf]->values()
+        win2popup = virtual_text['win2popup']
         # The function might already have removed the key.{{{
         #
         # That happens when closing a window.
@@ -405,7 +405,7 @@ def CloseStalePopups(arg_buf = 0, arg_curwin = 0) #{{{3
             # relevant  popup (because  more up-to-date).   But that's  bound to
             # fail if there's no longer any popup.  So, we need a fallback.
             #}}}
-            db[buf][textprop]['fallback_opts'] = popup_getoptions(win2popup[curwin])
+            virtual_text['fallback_opts'] = popup_getoptions(win2popup[curwin])
             win2popup[curwin]->popup_close()
             # if the  window no longer  displays the current buffer,  remove its
             # key from `win2popup`
@@ -507,8 +507,7 @@ def SaveTextPropertiesBeforeReload() #{{{3
         return
     endif
 
-    var types: list<string> = db[buf]->keys()
-    for type in types
+    for [type, info] in db[buf]->items()
         var newpos: dict<any>
         try
             newpos = {type: type, bufnr: buf}->prop_find('f')
@@ -526,7 +525,7 @@ def SaveTextPropertiesBeforeReload() #{{{3
             newpos->remove('type')
         endif
 
-        db[buf][type]['pos'] = newpos
+        info['pos'] = newpos
     endfor
 enddef
 
@@ -535,14 +534,12 @@ def RestoreTextPropertiesAfterReload() #{{{3
     if !db->has_key(buf)
         return
     endif
-    var types: list<string> = db[buf]->keys()
-    for type in types
-        var type_info: dict<any> = db[buf][type]
-        var highlight: string = type_info.highlight_real
-        var pos: dict<number> = type_info.pos
+    for [type, info] in db[buf]->items()
+        var highlight: string = info.highlight_real
+        var pos: dict<number> = info.pos
 
         # the virtual text  could have been deleted with  an interactive command
-        # (`dd`, `:123d`, ...)
+        # (`dd`, `:123 d`, ...)
         if pos == {}
             db[buf]->remove(type)
             continue
@@ -559,7 +556,7 @@ def RestoreTextPropertiesAfterReload() #{{{3
             type: type,
         })
         # don't need the info anymore, let's clear it to keep the db as simple/light as possible
-        type_info.pos = {}
+        info.pos = {}
     endfor
 enddef
 
@@ -587,16 +584,15 @@ def ReattachPopups() #{{{3
 # But after  a buffer  is reloaded,  such a popup  loses its  `textprop` option,
 # which probably prevents it from being visible.
 #
-#     vim9script
+#     execute 'silent edit ' .. tempname()
 #     'text'->setline(1)
-#     silent sav! /tmp/file
+#     silent write
 #     var buf = bufnr('%')
 #     prop_type_add('textprop', {bufnr: buf})
 #     prop_add(1, 1, {type: 'textprop', length: 1, bufnr: buf})
 #     var id = popup_create('', {textprop: 'textprop'})
 #     silent edit
 #     echo popup_getoptions(id)->keys()->filter((_, v: string): bool => v =~ 'textprop')
-#
 #     ['textpropid', 'textpropwin']˜
 #
 # Note that this is only the case if the text property is local to the buffer.
@@ -634,7 +630,7 @@ def ReattachPopups() #{{{3
                 })
             # E475: Invalid argument: virtualText123
             # the  virtual text  could  have been  deleted  with an  interactive
-            # command (`dd`, `:123d`, ...)
+            # command (`dd`, `:123 d`, ...)
             catch /^Vim\%((\a\+)\)\=:E475:/
             endtry
         endfor
