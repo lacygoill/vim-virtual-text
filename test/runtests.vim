@@ -15,7 +15,7 @@ var tests: list<string> = testdir
 # If that happens, we might need to run `:source` from a legacy function/script.
 # How does Vim handle this issue in its own test suite?
 #}}}
-for test in tests
+for test: string in tests
     v:errors = []
     execute 'source ' .. testdir .. '/' .. test
     if v:errors != []

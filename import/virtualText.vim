@@ -278,7 +278,7 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
 
     var left_padding: number = col([lnum, '$']) - col - length + 1
     # iterate over *all* the windows where the current buffer is displayed
-    for winid in win_findbuf(buf)
+    for winid: number in win_findbuf(buf)
         # create the popup
         var popup_id: number = popup_create(text, {
             fixed: true,
@@ -331,7 +331,7 @@ def RemoveStaleVirtualText(buf: number, lnum: number) #{{{3
         var stale_virtualtext: string = proplist[idx]['type']
         var stale_popups: list<number> =
             db[buf][stale_virtualtext]['win2popup']->values()
-        for id in stale_popups
+        for id: number in stale_popups
             popup_close(id)
         endfor
         proplist->remove(idx)
@@ -369,7 +369,7 @@ def UpdatePadding( #{{{3
         col([start, '$']) - textprop.col - textprop.length + 1
     # TODO: Try to cache `win_findbuf()` to optimize the performance.
     # Clear the cache on `WinLeave` and `BufWinLeave`.
-    for winid in win_findbuf(buf)
+    for winid: number in win_findbuf(buf)
         var popup_id: number = db[buf][textprop.type]['win2popup'][winid]
         popup_setoptions(popup_id, {
             mask: [[1, left_padding, 1, 1]],
@@ -386,7 +386,7 @@ def CloseStalePopups(arg_buf = 0, arg_curwin = 0) #{{{3
     endif
     var curwin: number = arg_curwin != 0 ? arg_curwin : win_getid()
     var win2popup: dict<number>
-    for virtual_text in db[buf]->values()
+    for virtual_text: dict<any> in db[buf]->values()
         win2popup = virtual_text['win2popup']
         # The function might already have removed the key.{{{
         #
@@ -451,7 +451,7 @@ def MirrorPopups() #{{{3
 
     # iterate over the virtual texts
     # (i.e. their text, the name of their text property, and their popup ids)
-    for [text, textprop, win2popup] in db[buf]
+    for [text: string, textprop: string, win2popup: dict<number>] in db[buf]
         ->mapnew((k: string, v: dict<any>): list<any> => [v.text, k, v.win2popup])
         ->values()
 
@@ -507,7 +507,7 @@ def SaveTextPropertiesBeforeReload() #{{{3
         return
     endif
 
-    for [type, info] in db[buf]->items()
+    for [type: string, info: dict<any>] in db[buf]->items()
         var newpos: dict<any>
         try
             newpos = {type: type, bufnr: buf}->prop_find('f')
@@ -534,7 +534,7 @@ def RestoreTextPropertiesAfterReload() #{{{3
     if !db->has_key(buf)
         return
     endif
-    for [type, info] in db[buf]->items()
+    for [type: string, info: dict<any>] in db[buf]->items()
         var highlight: string = info.highlight_real
         var pos: dict<number> = info.pos
 
@@ -607,7 +607,7 @@ def ReattachPopups() #{{{3
     # TODO: What if the  popups have been manually closed (e.g.  with our custom
     # mappings `=d` or  `zp`)?  Should we bail out?  Or  should we re-create the
     # popups and continue?
-    for [textprop, win2popup] in db[buf]
+    for [textprop: string, win2popup: dict<number>] in db[buf]
             ->mapnew((_, v: dict<any>): dict<number> => v.win2popup)
             ->items()
         # We need to do that for *all* windows displaying the buffer.{{{
@@ -617,7 +617,7 @@ def ReattachPopups() #{{{3
         #     :split | edit | wincmd w
         #     # no more virtual texts
         #}}}
-        for [textpropwin, id] in win2popup->items()
+        for [textpropwin: string, id: number] in win2popup->items()
             try
                 popup_setoptions(id, {
                     textprop: textprop,
@@ -701,7 +701,7 @@ def AdjustVirtualTextInAllWindows()
                   ->values()
                   ->mapnew((_, w) => w.win2popup->values()))
         ->flattennew()
-    for popup_id in popup_ids
+    for popup_id: number in popup_ids
         AdjustVirtualTextLength(popup_id)
     endfor
 enddef
