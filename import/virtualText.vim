@@ -307,8 +307,10 @@ export def VirtualTextAdd(props: dict<any>) #{{{3
     augroup VirtualTextPersistAfterReload
         autocmd! * <buffer>
         autocmd BufUnload <buffer> SaveTextPropertiesBeforeReload()
-        autocmd BufReadPost <buffer> RestoreTextPropertiesAfterReload()
-            | ReattachPopups()
+        autocmd BufReadPost <buffer> {
+            RestoreTextPropertiesAfterReload()
+            ReattachPopups()
+        }
     augroup END
 enddef
 
