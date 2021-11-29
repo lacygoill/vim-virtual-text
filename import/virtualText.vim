@@ -2,6 +2,15 @@ vim9script
 
 const TYPE_PREFIX: string = 'virtualText'
 
+# TODO: Investigate  whether  the  code  would  be  faster  by  adding  all  the
+# properties in a single call via the new `prop_add_list()` function.
+#
+# ---
+#
+# Also, `prop_list()`  now supports a  `end_lnum` key in the  optional `{props}`
+# argument, which lets us retrieve all the properties in a range of lines.
+# Again, this might help improve the perf.
+
 # TODO: We had  many issues which –  I think –  were due to the  text properties
 # being local to a buffer.  Try to make them global to see whether it simplifies
 # the code, and makes it more reliable.
@@ -662,7 +671,7 @@ def AdjustVirtualTextLength(popup_id: number) #{{{3
 # after sth like `:split | wincmd L`.  We would need `:help todo /WinMoved`, and
 # `:help todo /WinResized`.
 # Also, no  event is fired  when we  close a window;  so we can't  reclaim newly
-# available space after closing a window.  We would nee `:help todo /WinClose`.
+# available space after closing a window.  We would need `:help todo /WinClose`.
 #
 # In the  meantime, we need to  use a timer.   When the callback is  invoked, it
 # should  iterate over  all  the popup  ids implementing  virtual  texts in  the
