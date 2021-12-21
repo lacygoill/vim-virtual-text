@@ -672,6 +672,7 @@ def AdjustVirtualTextLength(popup_id: number) #{{{3
 # `:help todo /WinResized`.
 # Also, no  event is fired  when we  close a window;  so we can't  reclaim newly
 # available space after closing a window.  We would need `:help todo /WinClose`.
+# Update: Vim now supports `Winclosed`; so that should no longer be an issue.
 #
 # In the  meantime, we need to  use a timer.   When the callback is  invoked, it
 # should  iterate over  all  the popup  ids implementing  virtual  texts in  the

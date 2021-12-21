@@ -14,4 +14,3 @@ Reset()
 vsplit
 enew
 popup_list()->len()->assert_equal(4)
-

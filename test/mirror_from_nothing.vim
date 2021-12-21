@@ -7,4 +7,3 @@ execute 'source ' .. expand('<sfile>:p:h') .. '/setup.vim'
 enew
 split
 edit %%
-

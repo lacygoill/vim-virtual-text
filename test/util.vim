@@ -8,4 +8,3 @@ def g:Reset()
     silent :% bwipeout!
     execute 'source ' .. SETUP_SCRIPT
 enddef
-

@@ -56,4 +56,3 @@ VirtualTextAdd({
     text: 'something that has been badly damaged or destroyed',
     highlights: {real: 'DiffAdd', virtual: 'MoreMsg'},
 })
-
