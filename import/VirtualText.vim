@@ -132,7 +132,8 @@ var counters: dict<number>
 
 # Autocmds {{{1
 
-augroup VirtualText | autocmd!
+augroup VirtualText
+    autocmd!
     autocmd BufWinLeave,QuitPre * CloseStalePopups()
     # `BufWinLeave` is not fired if the buffer is still displayed in another window.{{{
     #
@@ -452,7 +453,7 @@ def MirrorPopups() #{{{3
     # bail out if the popups have already been created on the current window
     # FIXME: Is `TYPE_PREFIX .. counters[buf]` correct?
     # What if the the last virtual text has been removed, and the db has been updated?
-    # It will probably raise an error...
+    # It will probably give an error...
     # Maybe we need another dictionary which maps buffers to the virtual texts they contain...
     || db[buf][TYPE_PREFIX .. counters[buf]]['win2popup']
         ->keys()

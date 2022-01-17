@@ -19,7 +19,8 @@ END
 writefile(lines, '/tmp/file')
 silent noswapfile edit /tmp/file
 
-import VirtualTextAdd from 'virtualText.vim'
+import 'VirtualText.vim'
+const VirtualTextAdd: func = VirtualText.VirtualTextAdd
 
 var shattered_pos: list<number> = searchpos('shattered', 'n')
 VirtualTextAdd({

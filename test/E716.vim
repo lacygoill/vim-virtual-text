@@ -5,5 +5,5 @@ execute 'source ' .. expand('<sfile>:p:h') .. '/setup.vim'
 tab split
 edit
 :1 tabnext
-# `E716` should not be raised
+# `E716` should not be given
 quit
