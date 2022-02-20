@@ -82,7 +82,7 @@ const TYPE_PREFIX: string = 'virtualText'
 #}}}
 # FIXME: Doesn't work well when cutting lines.{{{
 #
-# Example: Press `cj` while on the "shattered" line:
+# Example: Press `cj` while on the “shattered” line:
 #
 #     Half sunk a shattered visage lies, whose frown,
 #     And wrinkled lip, and sneer of cold command,
@@ -117,7 +117,7 @@ const TYPE_PREFIX: string = 'virtualText'
 #
 #    - reload the buffer
 #
-#    - "mirror" the virtual text in all windows displaying the buffer
+#    - “mirror” the virtual text in all windows displaying the buffer
 #
 #    - update the padding between the left border of the popup and its text,
 #      because some text has been inserted/deleted
@@ -707,12 +707,12 @@ enddef
 
 def AdjustVirtualTextInAllWindows()
     var popup_ids: list<number> = gettabinfo()[0]['windows']
-        ->mapnew((_, v: number): number => winbufnr(v))
+        ->map((_, v: number): number => winbufnr(v))
         ->filter((_, v: number): bool => db->has_key(v))
-        ->mapnew((_, v: number): list<list<number>> =>
+        ->map((_, v: number): list<list<number>> =>
               db[v]
                   ->values()
-                  ->mapnew((_, w) => w.win2popup->values()))
+                  ->map((_, w) => w.win2popup->values()))
         ->flattennew()
     for popup_id: number in popup_ids
         AdjustVirtualTextLength(popup_id)
