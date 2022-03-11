@@ -106,7 +106,7 @@ const TYPE_PREFIX: string = 'virtualText'
 # a list of window IDs.
 #
 # The counter is necessary to generate unique property type names.
-# It's incremented every time a virtual text is added into to the buffer.
+# It's incremented every time a virtual text is added into the buffer.
 # It's *never* decremented; even if a virtual text is later removed.
 #
 # The list  of window IDs  match the windows where  the buffer is  displayed and
