@@ -399,7 +399,7 @@ def CloseStalePopups(arg_buf = 0, arg_curwin = 0) #{{{3
     var curwin: number = arg_curwin != 0 ? arg_curwin : win_getid()
     var win2popup: dict<number>
     for virtual_text: dict<any> in db[buf]->values()
-        win2popup = virtual_text['win2popup']
+        win2popup = virtual_text.win2popup
         # The function might already have removed the key.{{{
         #
         # That happens when closing a window.
@@ -417,7 +417,7 @@ def CloseStalePopups(arg_buf = 0, arg_curwin = 0) #{{{3
             # relevant  popup (because  more up-to-date).   But that's  bound to
             # fail if there's no longer any popup.  So, we need a fallback.
             #}}}
-            virtual_text['fallback_opts'] = popup_getoptions(win2popup[curwin])
+            virtual_text.fallback_opts = popup_getoptions(win2popup[curwin])
             win2popup[curwin]->popup_close()
             # if the  window no longer  displays the current buffer,  remove its
             # key from `win2popup`
@@ -537,7 +537,7 @@ def SaveTextPropertiesBeforeReload() #{{{3
             newpos->remove('type')
         endif
 
-        info['pos'] = newpos
+        info.pos = newpos
     endfor
 enddef
 
@@ -706,7 +706,7 @@ def AdjustVirtualTextLength(popup_id: number) #{{{3
 enddef
 
 def AdjustVirtualTextInAllWindows()
-    var popup_ids: list<number> = gettabinfo()[0]['windows']
+    var popup_ids: list<number> = gettabinfo()[0].windows
         ->map((_, v: number): number => winbufnr(v))
         ->filter((_, v: number): bool => db->has_key(v))
         ->map((_, v: number): list<list<number>> =>
